@@ -67,7 +67,7 @@
 </head>
 <body>
 <header>
-  <div class="title">📈 相場表アプリ <small>野田ヤード / v1.5（書マーク手動消去）</small></div>
+  <div class="title">📈 相場表アプリ <small>野田ヤード / v1.6（車検満了の初期値=今の年月）</small></div>
   <div class="toolbar">
     <input id="q" class="search" placeholder="車種・型式で検索（例: アルファード MNH15 / セレナ C26）">
     <div class="awtoggle" id="awToggle">
@@ -637,7 +637,9 @@ function openTaxCalc(weightStr, name, maker){
   document.getElementById("txAge").value = isEco(name) ? "eco" : "u13";
   document.getElementById("txLag").value="1";
   document.getElementById("txJibai").value="500";
-  document.getElementById("txRY").value=""; document.getElementById("txRM").value="";
+  const _now=new Date();
+  document.getElementById("txRY").value=_now.getFullYear()-2018;   // 既定=今の令和年
+  document.getElementById("txRM").value=_now.getMonth()+1;          // 既定=今の月
   document.getElementById("taxTarget").textContent = name? ("対象：" + name + (weightStr?("（重量目安 "+weightStr+"kg）"):"")) : "手入力でも計算できます（重量区分を選択）";
   recalcTax();
   document.getElementById("taxOverlay").classList.add("open");
