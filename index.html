@@ -67,7 +67,7 @@
 </head>
 <body>
 <header>
-  <div class="title">📈 相場表アプリ <small>野田ヤード / v1.4（年式に和暦併記）</small></div>
+  <div class="title">📈 相場表アプリ <small>野田ヤード / v1.5（書マーク手動消去）</small></div>
   <div class="toolbar">
     <input id="q" class="search" placeholder="車種・型式で検索（例: アルファード MNH15 / セレナ C26）">
     <div class="awtoggle" id="awToggle">
@@ -121,6 +121,7 @@
         <input id="edYear" placeholder="例: H14～20 / 2002～2008" style="flex:1">
         <button type="button" class="btn" id="gooBtn">🔎 グーネット</button>
       </div></div>
+    <div class="field"><label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="edNoDoc" style="width:auto"> 📄 「書」マークを消す（書類マーク非表示）</label></div>
     <div class="field"><label>メモ</label><textarea id="edMemo" rows="2" placeholder="テール2本 / 外装関係ない 等"></textarea></div>
     <div class="sheet-actions">
       <button class="btn" id="delBtn" style="color:#fca5a5">削除</button>
@@ -396,11 +397,11 @@ function normDate(s){
 function wareki(y){ y=parseInt(y,10); if(!y) return ""; if(y>=2019) return "R"+(y-2018); if(y>=1989) return "H"+(y-1988); if(y>=1926) return "S"+(y-1925); return ""; }
 function toWareki(s){ const ys=String(s||"").match(/\d{4}/g); if(!ys) return ""; return ys.map(wareki).join("〜"); }
 function isRecent(d){ if(!d) return false; const t=new Date(d); return (Date.now()-t.getTime())/(86400000) <= RECENT_DAYS; }
-function priceCell(val, active){
+function priceCell(val, active, hideDoc){
   if(val==null||val==="") return '<span class="dim">—</span>';
   let badge="";
   const s=String(val);
-  if(s.includes("書")) badge+='<span class="badge doc" title="車検書類付（書類あり）">書</span>';
+  if(!hideDoc && s.includes("書")) badge+='<span class="badge doc" title="車検書類付（書類あり）">書</span>';
   if(s.includes("AC")||s.includes("OC")) badge+='<span class="badge" title="オークション">OC</span>';
   if(s.includes("?")||s.includes("？")) badge+='<span class="badge">要確認</span>';
   const n=num(s);
@@ -429,14 +430,16 @@ function render(){
     const gooUrl="https://www.google.com/search?q="+encodeURIComponent(r.n+" 年式 中古車 カタログ");
     const gooWtUrl="https://www.google.com/search?q="+encodeURIComponent(r.n+" 車両重量 グーネット カタログ");
     const wt=lookupWeight(r.n);
+    const docOff=/#書OFF/.test(r.memo||"");
+    const memoDisp=(r.memo||"").replace(/\s*#書OFF/g,"").trim();
     return `<tr class="row ${recent?'recent':''}" data-id="${r.id}">
       <td><div class="maker">${r.m}</div><div class="model">${r.n}${recent?' <span class="badge new">NEW</span>':''}</div>
-        ${r.memo?`<div class="memo">📝 ${r.memo}</div>`:''}
+        ${memoDisp?`<div class="memo">📝 ${memoDisp}</div>`:''}
         <div><a class="goo" href="${gooUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔎年式</a>
         <a class="goo" href="${gooWtUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="margin-left:10px">🔎重量</a>
         <a class="goo taxlink" data-wt="${wt}" data-name="${(r.n||'').replace(/"/g,'&quot;')}" data-maker="${r.m}" style="margin-left:10px;cursor:pointer">🧮還付</a></div></td>
-      <td>${priceCell(r.aw, awMode===1)}${(/書/.test(r.n)&&!String(r.aw).includes('書'))?' <span class="badge doc" title="車検書類付（車名に書付き表記）">書</span>':''}</td>
-      <td>${priceCell(r.l, awMode===0)}</td>
+      <td>${priceCell(r.aw, awMode===1, docOff)}${(/書/.test(r.n)&&!docOff&&!String(r.aw).includes('書'))?' <span class="badge doc" title="車検書類付（車名に書付き表記）">書</span>':''}</td>
+      <td>${priceCell(r.l, awMode===0, docOff)}</td>
       <td>${negin}</td>
       <td class="dim" style="font-size:12px;white-space:nowrap">${r.y?(r.y+'<br><span style="opacity:.75">'+toWareki(r.y)+'</span>'):'—'}</td>
       <td class="dim" style="font-size:12px;white-space:nowrap">${wt?wt+'<small style="color:var(--muted)">kg</small>':'—'}</td>
@@ -471,7 +474,8 @@ function openEditor(id){
   document.getElementById("edAw").value=r.aw;
   document.getElementById("edLess").value=r.l;
   document.getElementById("edNegin").value=r.g;
-  document.getElementById("edMemo").value=r.memo;
+  document.getElementById("edMemo").value=(r.memo||"").replace(/\s*#書OFF/g,"").trim();
+  document.getElementById("edNoDoc").checked=/#書OFF/.test(r.memo||"");
   document.getElementById("edYear").value = r.y || lookupYear(r.n) || "";
   document.getElementById("edDate").value=r.d||"";
   document.getElementById("delBtn").style.display = id?"block":"none";
@@ -487,7 +491,7 @@ document.getElementById("saveBtn").onclick=()=>{
     aw:document.getElementById("edAw").value.trim(),
     l:document.getElementById("edLess").value.trim(),
     g:document.getElementById("edNegin").value.trim(),
-    memo:document.getElementById("edMemo").value.trim(),
+    memo:(document.getElementById("edMemo").value.trim().replace(/\s*#書OFF/g,"")+(document.getElementById("edNoDoc").checked?" #書OFF":"")).trim(),
     y:document.getElementById("edYear").value.trim(),
     d:document.getElementById("edDate").value || todayStr()
   };
