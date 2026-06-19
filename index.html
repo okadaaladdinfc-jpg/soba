@@ -1,0 +1,652 @@
+﻿<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>相場表アプリ v0.1（野田ヤード）</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#1a1d24; --panel2:#222631; --line:#2c313c;
+    --txt:#e7e9ee; --muted:#9aa3b2; --accent:#3b82f6; --accent2:#22c55e;
+    --warn:#f59e0b; --new:#ef4444; --chip:#2a2f3a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:"Segoe UI","Hiragino Kaku Gothic ProN","Meiryo",sans-serif;font-size:15px}
+  header{position:sticky;top:0;z-index:20;background:linear-gradient(#161922,#12151c);border-bottom:1px solid var(--line);padding:10px 14px}
+  .title{font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .title small{font-size:12px;color:var(--muted);font-weight:400}
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:center}
+  input,select,button,textarea{font-family:inherit;font-size:14px}
+  .search{flex:1;min-width:200px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--txt)}
+  .search::placeholder{color:var(--muted)}
+  .btn{padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);cursor:pointer}
+  .btn:hover{border-color:var(--accent)}
+  .btn.primary{background:var(--accent);border-color:var(--accent)}
+  .btn.green{background:var(--accent2);border-color:var(--accent2);color:#06210f}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .chip{padding:6px 11px;border-radius:999px;background:var(--chip);border:1px solid var(--line);color:var(--muted);cursor:pointer;font-size:13px}
+  .chip.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .awtoggle{display:flex;gap:0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .awtoggle button{padding:9px 12px;background:var(--panel);color:var(--muted);border:0;cursor:pointer}
+  .awtoggle button.on{background:var(--accent2);color:#06210f;font-weight:700}
+  main{padding:10px 12px 80px}
+  .meta{color:var(--muted);font-size:12px;margin:6px 2px}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{position:sticky;top:0;font-size:12px;color:var(--muted);background:var(--panel);font-weight:600}
+  tr.row:hover{background:#171b24;cursor:pointer}
+  .maker{font-size:11px;color:var(--muted)}
+  .model{font-weight:600}
+  .price{font-variant-numeric:tabular-nums;font-weight:700;font-size:16px;white-space:nowrap}
+  .price small{font-size:11px;color:var(--muted);font-weight:400}
+  .dim{color:var(--muted)}
+  .active-price{color:var(--accent2)}
+  .badge{display:inline-block;font-size:10px;padding:1px 6px;border-radius:6px;background:var(--panel2);color:var(--muted);margin-left:6px;border:1px solid var(--line)}
+  .badge.new{background:rgba(239,68,68,.15);color:#fca5a5;border-color:#7f1d1d}
+  .badge.ng{background:rgba(245,158,11,.12);color:#fcd34d;border-color:#854d0e}
+  .badge.doc{font-size:14px;font-weight:800;background:#2563eb;color:#fff;border-color:#1d4ed8;padding:2px 9px;letter-spacing:1px;box-shadow:0 0 0 1px rgba(37,99,235,.4)}
+  .memo{color:var(--warn);font-size:12px;margin-top:3px}
+  .goo{display:inline-block;margin-top:4px;font-size:11px;color:#7dd3fc;text-decoration:none}
+  .goo:hover{text-decoration:underline}
+  .negin{color:var(--muted);font-size:12px}
+  tr.recent td{background:rgba(239,68,68,.06)}
+  /* editor */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center;z-index:40}
+  .overlay.open{display:flex}
+  .sheet{background:var(--panel);width:100%;max-width:560px;border-radius:16px 16px 0 0;border:1px solid var(--line);padding:16px;max-height:88vh;overflow:auto}
+  .sheet h3{margin:0 0 12px}
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+  .field input,.field textarea,.field select{width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--txt)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .sheet-actions{display:flex;gap:8px;justify-content:space-between;margin-top:6px}
+  .empty{text-align:center;color:var(--muted);padding:40px}
+  @media(min-width:700px){ .overlay{align-items:center} .sheet{border-radius:16px} }
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<header>
+  <div class="title">📈 相場表アプリ <small>野田ヤード / v1.3（車名「書付き」も金額横にバッジ）</small></div>
+  <div class="toolbar">
+    <input id="q" class="search" placeholder="車種・型式で検索（例: アルファード MNH15 / セレナ C26）">
+    <div class="awtoggle" id="awToggle">
+      <button data-aw="1" class="on">アルミ有(AW)</button>
+      <button data-aw="0">アルミ無(レス)</button>
+    </div>
+    <button class="btn green" id="addBtn">＋新規</button>
+    <button class="btn" id="exportBtn">CSV出力</button>
+    <button class="btn" id="importBtn">CSV取込</button>
+    <input type="file" id="fileIn" accept=".csv" class="hidden">
+    <button class="btn" id="syncBtn">🔄 更新</button>
+    <button class="btn" id="cfgBtn">⚙ 同期設定</button>
+    <button class="btn" id="taxBtn">🧮 還付計算</button>
+  </div>
+  <div class="chips" id="makers"></div>
+  <div class="meta" id="syncbar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px">
+    <span id="syncStatus">同期オフ（ローカル保存）</span>
+  </div>
+</header>
+
+<main>
+  <div class="meta" id="meta"></div>
+  <table>
+    <thead><tr>
+      <th>車種・型式</th>
+      <th>AW</th><th>レス</th><th>ネギン</th><th>年式</th><th>車両重量</th><th>更新日</th>
+    </tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div class="empty hidden" id="empty">該当なし</div>
+</main>
+
+<!-- editor -->
+<div class="overlay" id="overlay">
+  <div class="sheet">
+    <h3 id="edTitle">編集</h3>
+    <div class="field"><label>メーカー</label>
+      <select id="edMaker"></select></div>
+    <div class="field"><label>車種・型式</label>
+      <input id="edModel" placeholder="アルファード 3000 後期 MNH15"></div>
+    <div class="grid2">
+      <div class="field"><label>AW（アルミ有）売値</label><input id="edAw" placeholder="320"></div>
+      <div class="field"><label>レス（アルミ無）売値</label><input id="edLess" placeholder="—"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label>ネギン</label><input id="edNegin" placeholder="264 / 不可"></div>
+      <div class="field"><label>更新日</label><input id="edDate" type="date"></div>
+    </div>
+    <div class="field"><label>年式（型式から調べた生産期間）</label>
+      <div style="display:flex;gap:8px">
+        <input id="edYear" placeholder="例: H14～20 / 2002～2008" style="flex:1">
+        <button type="button" class="btn" id="gooBtn">🔎 グーネット</button>
+      </div></div>
+    <div class="field"><label>メモ</label><textarea id="edMemo" rows="2" placeholder="テール2本 / 外装関係ない 等"></textarea></div>
+    <div class="sheet-actions">
+      <button class="btn" id="delBtn" style="color:#fca5a5">削除</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="cancelBtn">閉じる</button>
+        <button class="btn primary" id="saveBtn">保存（更新日=今日）</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 重量税 還付計算 -->
+<div class="overlay" id="taxOverlay">
+  <div class="sheet">
+    <h3>🧮 重量税 還付計算</h3>
+    <div id="taxTarget" class="dim" style="font-size:12px;margin-bottom:10px"></div>
+    <div class="grid2">
+      <div class="field"><label>重量区分（0.5t刻み）</label>
+        <select id="txBracket">
+          <option value="">— 選択 —</option>
+          <option value="軽">軽自動車</option>
+          <option value="1.0t以下">1.0t以下（〜1,000kg）</option>
+          <option value="1.5t以下">1.5t以下（〜1,500kg）</option>
+          <option value="2.0t以下">2.0t以下（〜2,000kg）</option>
+          <option value="2.5t以下">2.5t以下（〜2,500kg）</option>
+          <option value="3.0t以下">3.0t以下（〜3,000kg）</option>
+        </select></div>
+      <div class="field"><label>車検満了（令和）</label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span>R</span><input id="txRY" type="number" inputmode="numeric" placeholder="8" style="width:64px">
+          <span>年</span><input id="txRM" type="number" inputmode="numeric" placeholder="12" style="width:64px"><span>月</span>
+        </div></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label>車齢区分</label>
+        <select id="txAge">
+          <option value="u13">13年未満（標準）</option>
+          <option value="o13">13年経過</option>
+          <option value="o18">18年経過</option>
+          <option value="eco">エコカー（本則）</option>
+        </select></div>
+      <div class="field"><label>手続き調整（月）<span class="dim">／1か月半=−1</span></label><input id="txLag" type="number" value="1"></div>
+    </div>
+    <div class="field"><label>自賠責 月額（円）<span class="dim">／既定500</span></label><input id="txJibai" type="number" value="500" style="width:130px"></div>
+    <div id="taxResult" style="background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:14px;line-height:1.9"></div>
+    <div class="sheet-actions" style="margin-top:12px"><span></span>
+      <button class="btn primary" id="taxClose">閉じる</button></div>
+  </div>
+</div>
+
+<script>
+/* ===== 価格は1000円単位（140=14万円）。AW=アルミ有, レス=アルミ無 ===== */
+/* seed: [メーカー, 車種・型式, AW, レス, ネギン, メモ]  ＝Googleスプレッドシート「相場」タブ(2026-06-17取得)から生成 */
+const SEED = [];
+
+const MAKERS = ["トヨタ","日産","ホンダ","スズキ","ダイハツ","スバル","マツダ","三菱","レクサス","輸入車"];
+const LS_KEY = "soba_v01";
+const RECENT_DAYS = 14;
+
+/* 年式（型式→生産期間）目安辞書。型式コード優先。長いキー優先でマッチ。要確認はグーネット🔎で */
+const YEARMAP = {
+// トヨタ
+"QNC2":"2005-2016","bB NCP30":"2000-2005","bB NCP31":"2000-2005","ZZE127":"2001-2004",
+"ZNM10":"2004-2009","ZGM1":"2009-2017","ANM10":"2004-2009","アイシス":"2004-2017",
+"アクア":"2011-2021","ATH10":"2002-2008","ATH20":"2008-2015",
+"ANH10":"2002-2008","MNH10":"2002-2008","MNH15":"2002-2008",
+"ANH20":"2008-2015","GGH20":"2008-2015","GGH25":"2008-2015","イスト":"2002-2016",
+"ZNE10":"2003-2009","ANE10":"2003-2009","ZGE2":"2009-2017",
+"KSP90":"2005-2010","SCP90":"2005-2010","NCP91":"2005-2010","KSP130":"2010-2020","NSP130":"2010-2020",
+"NCP10":"1999-2005","SCP10":"1999-2005","SCP13":"2002-2005",
+"MCR30":"2000-2006","ACR30":"2000-2006","MCR40":"2000-2006","ACR40":"2000-2006",
+"ACR50":"2006-2019","ACR55":"2006-2019","GSR5":"2006-2019","AHR20":"2006-2019",
+"オーリス":"2006-2018","カローラルミオン":"2007-2016","カローラスパシオ":"2001-2007","AZT241":"2002-2007",
+"クラウンコンフォート":"1995-2017","GRS180":"2003-2008","GRS182":"2003-2008","GRS200":"2008-2012","GRS202":"2008-2012",
+"クラウンマジェスタ":"2004-2013","UZS186":"2004-2009","NCP81":"2003-2015",
+"NCP141":"2012-2020","NSP140":"2012-2020","NCP140":"2012-2020","NCP145":"2012-2020",
+"サクシード":"2002-2020","セルシオ":"2000-2006","ヴォクシー60":"2001-2007","ノア/ヴォクシー60":"2001-2007",
+"ヴォクシー70":"2007-2014","ノア 70":"2007-2014","パッソKGC10":"2004-2010","KGC30":"2010-2016","パッソ QNC10":"2004-2010",
+"プロボックス":"2002-2020","NCP20":"1999-2005","AZE156":"2006-2012","AZE154":"2006-2012","NCP12":"1999-2005",
+"NNP1":"2004-2012","GX110":"2000-2007","GRX120":"2004-2009","GRX130":"2009-2019","マークXジオ":"2007-2013",
+"NCP100":"2005-2010","NCP120":"2010-2016","SCP100":"2005-2010","NSP120":"2010-2016",
+"NCZ20":"2003-2011","プリウス 20":"2003-2009","プリウス 30":"2009-2015",
+// レクサス
+"LS600":"2007-2017","LS460":"2006-2017","USF40":"2006-2017","IS250":"2005-2013","GS350":"2005-2012",
+// 日産
+"VY12":"2006-2018","ウイングロードY12":"2005-2018","NT30":"2000-2007","NT31":"2007-2013",
+"TE52":"2010-2020","PE52":"2010-2020","エルグランド 51":"2002-2010","ALWE50":"1997-2002",
+"MY34":"1999-2004","スカイライン V35":"2001-2007","スカイライン V36":"2006-2014","ジューク":"2010-2019","GF50":"2001-2010",
+"C25":"2005-2010","C26":"2010-2016","FC26":"2010-2016","HFC26":"2010-2016","TC24":"1999-2005",
+"ティアナ J31":"2003-2008","J32":"2008-2014","ティアナ L33":"2014-2020",
+"E11":"2005-2012","E12":"2012-2020","C11":"2004-2012","SC11":"2004-2012",
+"YZ11":"2002-2008","BZ11":"2002-2008","キューブ Z12":"2008-2020",
+"AK12":"2002-2010","YK12":"2002-2010","マーチ K13":"2010-2022","NV200":"2009-2024",
+"シルフィ KG11":"2005-2012","シルフィ G11":"2005-2012","TB17":"2012-2020","フーガ Y50":"2004-2009","PNY50":"2004-2009",
+"リーフ":"2010-2017","ムラーノ":"2004-2015","デュアリス":"2007-2014","プレサージュ":"2003-2009",
+// ホンダ
+"CL7":"2002-2008","CU1":"2008-2013","ZE2":"2009-2014","RT3":"2007-2010","エディックス":"2004-2009",
+"RR1":"2004-2013","RR3":"2004-2013","RR5":"2004-2013","エアウェイブ":"2005-2010",
+"RB1":"2003-2008","RB2":"2003-2008","RB3":"2008-2013","RC1":"2013-2020",
+"RK1":"2009-2015","RK5":"2009-2015","RG1":"2005-2009","RG3":"2005-2009","RF7":"2001-2005","RF1":"1996-2001","RF2":"1996-2001",
+"RN1":"2000-2006","RN6":"2006-2014","RN8":"2006-2014",
+"GD1":"2001-2007","GD2":"2001-2007","GE6":"2007-2013","GE7":"2007-2013","GP1":"2010-2013","GP5":"2013-2020",
+"フィットシャトル":"2011-2015","フリードHV":"2011-2016","GB3":"2008-2016","モビリオ":"2001-2008",
+// マツダ
+"LY3P":"2006-2016","LW3W":"1999-2006","アテンザ":"2002-2019","DE3FS":"2007-2014","ビアンテ":"2008-2018",
+"プレマシー":"2005-2018","CX-5":"2012-2017","ベリーサ":"2004-2015","キャロル":"2009-2024",
+// 三菱
+"CV4W":"2007-2019","CV5W":"2007-2019","MB15S":"2011-2020","RVR":"2010-2024","アウトランダー":"2005-2012",
+// スバル
+"GG2":"2000-2007","GP3":"2011-2016","エクシーガ":"2008-2018","SH5":"2007-2012","プレオ":"1998-2018",
+"BR":"2009-2014","BP5":"2003-2009","BM":"2009-2014","BL5":"2003-2009",
+// スズキ
+"HA25":"2009-2014","アルトエコ":"2011-2014","DA64V":"2005-2015","DA62V":"2001-2005","DA17V":"2015-2024",
+"DA63T":"2002-2013","DA16T":"2013-2024","DB52T":"1999-2002","DA62T":"2001-2002","64W":"2005-2015",
+"ZC11S":"2004-2010","ZD11S":"2004-2010","スイフト 72":"2010-2017","スイフト 71":"2010-2017","ソリオ":"2010-2024",
+// ダイハツ
+"ミライース":"2011-2024","アトレー":"2005-2021","ハイゼット":"1999-2021",
+// 追加（目安）
+"アベンシス":"2003-2018","サニー":"1998-2004","セドリック":"1999-2004","ラフェスタ":"2004-2012",
+"ブレイド":"2006-2012","WiLLサイファ":"2002-2005","WILL NCP19":"2001-2004","パッソセッテ":"2008-2012",
+"マーチ":"2002-2010","AD 1":"1999-2016","アルト 24":"2004-2009","アルト 25":"2009-2014",
+"DA52V":"1999-2001","エブリイ 64":"2005-2015","キャリイT":"2002-2013","エルグランド 17-18":"2014-2020",
+"ウイッシュ 2000CC":"2003-2009","バネット":"1999-2016","クリッパー":"2003-2024","プレオプレス":"2007-2018"
+};
+const YEARKEYS = Object.keys(YEARMAP).sort((a,b)=>b.length-a.length);
+function lookupYear(name){ for(const k of YEARKEYS){ if(name.indexOf(k)>=0) return YEARMAP[k]; } return ""; }
+
+/* 車両重量（kg・カタログ概算レンジ。型式優先・長いキー優先。要確認はグーネット🔎で） */
+const WEIGHTMAP = {
+// トヨタ
+"ANH20":"1920-2070","GGH20":"1950-2070","GGH25":"2020-2100","ATH20":"2000-2050",
+"ANH10":"1900-2040","MNH10":"1950-2050","MNH15":"1950-2050","ATH10":"2000-2080",
+"プリウス 20":"1290-1320","プリウス 30":"1310-1380","アクア":"1050-1130",
+"NCP10":"970-1010","SCP10":"980-1020","KSP90":"980-1010","SCP90":"1000-1050","NCP91":"1030-1080","KSP130":"970-1000","NSP130":"1010-1070",
+"ACR30":"1650-1730","MCR30":"1720-1800","ACR40":"1680-1760","MCR40":"1780-1850","ACR50":"1660-1770","GSR5":"1820-1900","AHR20":"1920-1990",
+"ヴォクシー60":"1550-1660","ノア/ヴォクシー60":"1550-1660","ヴォクシー70":"1560-1660","ノア 70":"1560-1660",
+"ZNE10":"1290-1340","ANE10":"1380-1420","ZGE2":"1350-1450",
+"bB QNC20":"1010-1070","bB NCP30":"1020-1090","アイシス":"1480-1560",
+"NCP100":"1050-1120","NCP120":"1090-1160","NCP81":"1310-1380",
+"KGC30":"910-960","KGC10":"910-960","パッソ QNC10":"940-1000",
+"GRX120":"1500-1560","GRX130":"1530-1600","GRS180":"1560-1640","GRS200":"1640-1730",
+"ファンカーゴ":"1080-1140","イスト":"1000-1090","セルシオ":"1810-1900","NCZ20":"1180-1220",
+"NNP1":"1070-1130","NCP141":"1080-1130","NSP140":"1050-1100","ウイッシュ":"1290-1450",
+// レクサス
+"LS600":"2280-2380","LS460":"1990-2110","IS250":"1560-1630","GS350":"1610-1700",
+// 日産
+"C25":"1580-1690","C26":"1590-1700","エルグランド 51":"1860-2070","TE52":"1900-2080","PE52":"1980-2100",
+"E11":"1050-1130","E12":"1040-1120","キューブ Z12":"1100-1170","YK12":"960-1010","AK12":"960-1010","マーチ K13":"940-990",
+"NT30":"1410-1510","NT31":"1480-1590","ティアナ J31":"1450-1530","J32":"1480-1560","ジューク":"1230-1380",
+"Y50":"1680-1790","リーフ":"1430-1450","ムラーノ":"1750-1900","デュアリス":"1450-1540",
+// ホンダ
+"GD1":"1000-1080","GE6":"1010-1090","GE7":"1010-1090","GP1":"1100-1150","GP5":"1080-1160",
+"RB1":"1560-1680","RB3":"1640-1730","RC1":"1690-1820","RG1":"1560-1660","RK1":"1590-1690","RK5":"1620-1700",
+"RR1":"1850-2000","フリード":"1340-1430","モビリオ":"1240-1320","エアウェイブ":"1230-1280","RN1":"1390-1480","RN6":"1430-1520",
+// マツダ
+"DE3FS":"990-1050","アテンザ":"1430-1560","LY3P":"1630-1750","CX-5":"1520-1620","プレマシー":"1480-1560","ビアンテ":"1560-1640",
+// 三菱
+"CV5W":"1820-1900","CV4W":"1690-1730","RVR":"1340-1450","MB15S":"1000-1070",
+// スバル
+"GG2":"1280-1360","GP3":"1300-1400","SH5":"1480-1560","エクシーガ":"1530-1600","BP5":"1430-1500","BL5":"1430-1500",
+// スズキ
+"ZC11S":"990-1040","ZD11S":"1000-1050","スイフト 71":"1000-1060","スイフト 72":"1000-1070","ソリオ":"1000-1070",
+"HA25":"700-750","DA64V":"900-1000","DA17V":"940-1000","DA63T":"700-800",
+// ダイハツ
+"ミライース":"650-730","ハイゼット":"840-1000","アトレー":"950-1010",
+// 追加補完（概算レンジ）
+"bB QNC21":"1050-1100","bB NCP31":"1030-1090","アベンシス":"1380-1500","SCP13":"1010-1050",
+"オーリス":"1230-1360","カローラルミオン":"1300-1400","カローラスパシオ":"1230-1320","AZT241":"1430-1520",
+"クラウンコンフォート":"1340-1450","GRS182":"1560-1640","GRS202":"1640-1730","クラウンマジェスタ":"1780-1900",
+"パッソセッテ":"1130-1200","プロボックス":"1100-1230","ブレイド":"1390-1450","NCP12":"960-1010","NCP140":"1050-1100",
+"NCP19":"1090-1140","NCP70":"1090-1150","GX110":"1450-1540","マークXジオ":"1520-1620",
+"AD ":"1130-1240","ウイングロード":"1190-1260","エルグランド 17-18":"1960-2090","ALWE50":"1920-2050",
+"MY34":"1560-1680","サニー":"1010-1110","V35":"1470-1600","V36":"1530-1680","GF50":"1860-1990","TC24":"1590-1690",
+"セドリック":"1480-1560","ティアナ L33":"1450-1520","ティーダ C11":"1130-1220","ティーダ JC11":"1180-1240",
+"YZ11":"1100-1180","BZ11":"1010-1080","マーチ 18年":"960-1010","NV200":"1300-1400","バネット":"1300-1450",
+"シルフィ":"1240-1340","プレサージュ":"1690-1790","ラフェスタ":"1480-1560","クリッパー":"880-1000",
+"CL7":"1310-1380","CU1":"1490-1560","ZE2":"1190-1220","RT3":"1490-1560","エディックス":"1380-1520","RR3":"1880-2050",
+"RB2":"1600-1680","RG3":"1560-1640","RF7":"1560-1660","RF2":"1550-1650","RN8":"1430-1540","GD2":"1000-1080","GP2":"1130-1180",
+"LW3W":"1630-1750","ベリーサ":"1080-1140","キャロル":"700-750",
+"プレオ":"830-900","BR":"1500-1570","BM":"1470-1540",
+"アルト":"700-760","DA52V":"900-1000","エブリイ":"900-1000","キャリイ":"700-800","キャリー":"700-800",
+"1シリーズ":"1300-1450","3シリーズ":"1430-1600","Z4":"1400-1500","5シリーズ":"1600-1750","X3":"1750-1900",
+"MINI":"1150-1280","ミニクロスオーバー":"1300-1400","プジョー":"1150-1400","ポロ":"1100-1250","PTクルーザー":"1500-1600",
+"ゴルフ":"1250-1400","ボルボ":"1430-1550","ビートル":"1200-1400","シトロエン":"1150-1400","フィアット":"1000-1200",
+"アルファロメオ":"1150-1250","Aクラス":"1300-1450","Bクラス":"1400-1500","Cクラス":"1480-1700","CLK":"1500-1650",
+"E350":"1750-1900","Vクラス":"2100-2300","ジャガー":"1700-1850","A5":"1500-1650","A4":"1430-1600"
+};
+const WEIGHTKEYS = Object.keys(WEIGHTMAP).sort((a,b)=>b.length-a.length);
+function lookupWeight(name){ for(const k of WEIGHTKEYS){ if(name.indexOf(k)>=0) return WEIGHTMAP[k]; } return ""; }
+
+/* ===== 双方向同期（Google スプレッドシート / Apps Script） ===== */
+const API_KEY="soba_api", CACHE_KEY="soba_v01_cache";
+const DEFAULT_API="https://script.google.com/macros/s/AKfycbzqjqZi07taoyE-vqtaJ--GX0C6q3g0Q6adw_xkmvyTzAmuOk-wQehAGeHKxc2q-DL_rA/exec";
+function API(){ return (localStorage.getItem(API_KEY)||DEFAULT_API).trim(); }
+function setStatus(t){ const e=document.getElementById("syncStatus"); if(e) e.textContent=t; }
+function jsonp(url){ return new Promise((res,rej)=>{
+  const cb="__sjp"+Date.now()+Math.floor(Math.random()*1000);
+  const s=document.createElement("script");
+  const done=(ok,d)=>{ try{delete window[cb];}catch(_){} s.remove(); ok?res(d):rej(new Error("net")); };
+  window[cb]=(d)=>done(true,d);
+  s.onerror=()=>done(false);
+  s.src=url+(url.indexOf("?")>=0?"&":"?")+"action=list&callback="+cb;
+  document.body.appendChild(s);
+  setTimeout(()=>{ if(window[cb]) done(false); }, 15000);
+});}
+async function syncPull(){
+  if(!API()){ setStatus("同期オフ（ローカル保存）"); return; }
+  setStatus("同期中…");
+  try{
+    const d=await jsonp(API());
+    if(d&&d.ok&&Array.isArray(d.rows)){
+      DATA=d.rows.map(r=>({id:String(r.id),m:r.m,n:r.n,aw:String(r.aw||""),l:String(r.l||""),g:String(r.g||""),y:String(r.y||""),memo:r.memo||"",d:normDate(r.d)}));
+      localStorage.setItem(CACHE_KEY, JSON.stringify(DATA));
+      buildChips(); render();
+      setStatus("✔ シート同期済 "+new Date().toLocaleTimeString("ja-JP"));
+    } else setStatus("⚠ 同期エラー（ローカル表示）");
+  }catch(e){ setStatus("⚠ オフライン（ローカル表示）"); }
+}
+function postNoCors(payload){
+  return fetch(API(),{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(payload)});
+}
+function pushUpsert(r){ if(!API())return; setStatus("保存をシートへ送信中…");
+  postNoCors({action:"upsert",row:r}).then(()=>setStatus("☁ 保存送信済（🔄更新で確認）")).catch(()=>setStatus("⚠ 送信失敗")); }
+function pushDelete(id){ if(!API())return;
+  postNoCors({action:"delete",id:id}).then(()=>setStatus("☁ 削除送信済")).catch(()=>{}); }
+function pushAll(){ if(!API())return;
+  if(!confirm("現在の全"+DATA.length+"件を「相場DB」タブへ書き出します（タブを上書き）。よろしいですか？")) return;
+  DATA.forEach((r,i)=>{ if(!/^r\d/.test(r.id)) r.id="r"+("000"+(i+1)).slice(-4); });
+  persist(); setStatus("全件アップロード中…");
+  postNoCors({action:"replaceAll",rows:DATA}).then(()=>{ setStatus("☁ アップロード送信済（数秒後に🔄）"); setTimeout(syncPull,4000); }).catch(()=>setStatus("⚠ 失敗")); }
+function configSync(){
+  const url=prompt("Apps Script ウェブアプリの URL（末尾 /exec）を貼り付け。\n（空欄にすると同期オフ）", API());
+  if(url===null) return;
+  localStorage.setItem(API_KEY, url.trim());
+  if(url.trim()){ if(confirm("接続しました。今の "+DATA.length+" 件をシートへ初回アップロードしますか？（初回のみ。既にDBがある場合はキャンセル→🔄更新）")) pushAll(); else syncPull(); }
+  else setStatus("同期オフ（ローカル保存）");
+}
+
+// load: seed merged with saved
+function loadData(){
+  if(API()){ const c=localStorage.getItem(CACHE_KEY); if(c){ try{ return JSON.parse(c); }catch(e){} } }
+  let saved = {};
+  try{ saved = JSON.parse(localStorage.getItem(LS_KEY)||"{}"); }catch(e){}
+  const map = {};
+  SEED.forEach((r,i)=>{
+    const id = "s"+i;
+    map[id] = {id, m:r[0], n:r[1], aw:r[2], l:r[3], g:r[4], memo:r[5], y:lookupYear(r[1]), d:""};
+  });
+  // overlay saved edits / new rows
+  Object.values(saved).forEach(rec=>{ map[rec.id]=rec; });
+  return Object.values(map);
+}
+function persist(){
+  // save full set (so edits to seed persist too)
+  const obj={};
+  DATA.forEach(r=>obj[r.id]=r);
+  localStorage.setItem(LS_KEY, JSON.stringify(obj));
+}
+let DATA = loadData();
+let awMode = 1;      // 1=AW, 0=レス
+let makerFilter = "";
+
+function num(s){ const m=String(s||"").match(/\d+(\.\d+)?/); return m?parseFloat(m[0]):null; }
+function normDate(s){
+  if(!s) return "";
+  s=String(s);
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+  const t=new Date(s);
+  if(!isNaN(t.getTime())) return t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0");
+  return s;
+}
+function isRecent(d){ if(!d) return false; const t=new Date(d); return (Date.now()-t.getTime())/(86400000) <= RECENT_DAYS; }
+function priceCell(val, active){
+  if(val==null||val==="") return '<span class="dim">—</span>';
+  let badge="";
+  const s=String(val);
+  if(s.includes("書")) badge+='<span class="badge doc" title="車検書類付（書類あり）">書</span>';
+  if(s.includes("AC")||s.includes("OC")) badge+='<span class="badge" title="オークション">OC</span>';
+  if(s.includes("?")||s.includes("？")) badge+='<span class="badge">要確認</span>';
+  const n=num(s);
+  const disp = n!=null ? n : s;
+  return `<span class="price ${active?'active-price':''}">${disp}${badge}</span>`;
+}
+
+function render(){
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  const tb = document.getElementById("rows");
+  let list = DATA.filter(r=>{
+    if(makerFilter && r.m!==makerFilter) return false;
+    if(q){ const hay=(r.m+" "+r.n+" "+(r.memo||"")).toLowerCase(); if(!hay.includes(q)) return false; }
+    return true;
+  });
+  // sort: maker order, then name
+  list.sort((a,b)=>{
+    const mi = MAKERS.indexOf(a.m)-MAKERS.indexOf(b.m);
+    if(mi!==0) return mi;
+    return a.n.localeCompare(b.n,"ja");
+  });
+  document.getElementById("meta").textContent = `${list.length}件表示 / 全${DATA.length}件　（価格は1000円単位＝140は14万円）`;
+  tb.innerHTML = list.map(r=>{
+    const recent = isRecent(r.d);
+    const negin = r.g ? (r.g==="不可"?'<span class="badge ng">ネギン不可</span>':`<span class="negin">${r.g}</span>`) : '<span class="dim">—</span>';
+    const gooUrl="https://www.google.com/search?q="+encodeURIComponent(r.n+" 年式 中古車 カタログ");
+    const gooWtUrl="https://www.google.com/search?q="+encodeURIComponent(r.n+" 車両重量 グーネット カタログ");
+    const wt=lookupWeight(r.n);
+    return `<tr class="row ${recent?'recent':''}" data-id="${r.id}">
+      <td><div class="maker">${r.m}</div><div class="model">${r.n}${recent?' <span class="badge new">NEW</span>':''}</div>
+        ${r.memo?`<div class="memo">📝 ${r.memo}</div>`:''}
+        <div><a class="goo" href="${gooUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔎年式</a>
+        <a class="goo" href="${gooWtUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="margin-left:10px">🔎重量</a>
+        <a class="goo taxlink" data-wt="${wt}" data-name="${(r.n||'').replace(/"/g,'&quot;')}" data-maker="${r.m}" style="margin-left:10px;cursor:pointer">🧮還付</a></div></td>
+      <td>${priceCell(r.aw, awMode===1)}${(/書/.test(r.n)&&!String(r.aw).includes('書'))?' <span class="badge doc" title="車検書類付（車名に書付き表記）">書</span>':''}</td>
+      <td>${priceCell(r.l, awMode===0)}</td>
+      <td>${negin}</td>
+      <td class="dim" style="font-size:12px">${r.y||'—'}</td>
+      <td class="dim" style="font-size:12px;white-space:nowrap">${wt?wt+'<small style="color:var(--muted)">kg</small>':'—'}</td>
+      <td class="dim" style="font-size:12px">${r.d||'—'}</td>
+    </tr>`;
+  }).join("");
+  document.getElementById("empty").classList.toggle("hidden", list.length>0);
+  document.querySelectorAll("tr.row").forEach(tr=>tr.onclick=()=>openEditor(tr.dataset.id));
+  document.querySelectorAll(".taxlink").forEach(a=>a.onclick=(e)=>{ e.stopPropagation(); openTaxCalc(a.dataset.wt, a.dataset.name, a.dataset.maker); });
+}
+
+// maker chips
+function buildChips(){
+  const box=document.getElementById("makers");
+  const all = ['<span class="chip '+(makerFilter===""?'active':'')+'" data-m="">すべて</span>'];
+  const present = [...new Set(DATA.map(r=>r.m))];
+  const chips = MAKERS.filter(m=>present.includes(m)).map(m=>
+    `<span class="chip ${makerFilter===m?'active':''}" data-m="${m}">${m}</span>`);
+  box.innerHTML = all.concat(chips).join("");
+  box.querySelectorAll(".chip").forEach(c=>c.onclick=()=>{ makerFilter=c.dataset.m; buildChips(); render(); });
+}
+
+// editor
+let editId=null;
+function openEditor(id){
+  editId=id;
+  const r = id ? DATA.find(x=>x.id===id) : {m:"トヨタ",n:"",aw:"",l:"",g:"",memo:"",y:"",d:""};
+  document.getElementById("edTitle").textContent = id?"編集":"新規追加";
+  const ms=document.getElementById("edMaker");
+  ms.innerHTML = MAKERS.map(m=>`<option ${m===r.m?'selected':''}>${m}</option>`).join("");
+  document.getElementById("edModel").value=r.n;
+  document.getElementById("edAw").value=r.aw;
+  document.getElementById("edLess").value=r.l;
+  document.getElementById("edNegin").value=r.g;
+  document.getElementById("edMemo").value=r.memo;
+  document.getElementById("edYear").value = r.y || lookupYear(r.n) || "";
+  document.getElementById("edDate").value=r.d||"";
+  document.getElementById("delBtn").style.display = id?"block":"none";
+  document.getElementById("overlay").classList.add("open");
+}
+function closeEditor(){ document.getElementById("overlay").classList.remove("open"); editId=null; }
+function todayStr(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+
+document.getElementById("saveBtn").onclick=()=>{
+  const rec={
+    m:document.getElementById("edMaker").value,
+    n:document.getElementById("edModel").value.trim(),
+    aw:document.getElementById("edAw").value.trim(),
+    l:document.getElementById("edLess").value.trim(),
+    g:document.getElementById("edNegin").value.trim(),
+    memo:document.getElementById("edMemo").value.trim(),
+    y:document.getElementById("edYear").value.trim(),
+    d:document.getElementById("edDate").value || todayStr()
+  };
+  if(!rec.n){ alert("車種・型式を入力してください"); return; }
+  let saved;
+  if(editId){ saved=DATA.find(x=>x.id===editId); Object.assign(saved,rec); }
+  else { rec.id=(API()?"r":"u")+Date.now(); DATA.push(rec); saved=rec; }
+  persist(); buildChips(); render(); closeEditor();
+  if(API()) pushUpsert(saved);
+};
+document.getElementById("delBtn").onclick=()=>{
+  if(!editId) return;
+  if(confirm("この行を削除しますか？")){ const did=editId; DATA=DATA.filter(x=>x.id!==editId); persist(); buildChips(); render(); closeEditor(); if(API()) pushDelete(did); }
+};
+document.getElementById("cancelBtn").onclick=closeEditor;
+document.getElementById("overlay").onclick=(e)=>{ if(e.target.id==="overlay") closeEditor(); };
+document.getElementById("addBtn").onclick=()=>openEditor(null);
+document.getElementById("gooBtn").onclick=()=>{
+  const m=document.getElementById("edModel").value.trim();
+  if(!m){ alert("先に車種・型式を入力してください"); return; }
+  window.open("https://www.google.com/search?q="+encodeURIComponent(m+" 年式 中古車 カタログ"),"_blank");
+};
+// 車種名を入れると年式を自動補完（空欄時のみ・上書き可）
+document.getElementById("edModel").addEventListener("input",()=>{
+  const yEl=document.getElementById("edYear");
+  if(!yEl.value){ const yy=lookupYear(document.getElementById("edModel").value); if(yy) yEl.value=yy; }
+});
+
+// aw toggle
+document.getElementById("awToggle").querySelectorAll("button").forEach(b=>{
+  b.onclick=()=>{
+    awMode=parseInt(b.dataset.aw);
+    document.querySelectorAll("#awToggle button").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on"); render();
+  };
+});
+document.getElementById("q").oninput=render;
+
+// CSV
+function toCSV(){
+  const head=["メーカー","車種・型式","AW","レス","ネギン","年式","車両重量kg","メモ","更新日"];
+  const esc=s=>{ s=String(s==null?"":s); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+  const lines=[head.join(",")];
+  DATA.slice().sort((a,b)=>MAKERS.indexOf(a.m)-MAKERS.indexOf(b.m)||a.n.localeCompare(b.n,"ja"))
+    .forEach(r=>lines.push([r.m,r.n,r.aw,r.l,r.g,r.y,lookupWeight(r.n),r.memo,r.d].map(esc).join(",")));
+  return "﻿"+lines.join("\r\n");
+}
+document.getElementById("exportBtn").onclick=()=>{
+  const blob=new Blob([toCSV()],{type:"text/csv"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download="相場表_"+todayStr()+".csv"; a.click();
+};
+document.getElementById("importBtn").onclick=()=>document.getElementById("fileIn").click();
+document.getElementById("fileIn").onchange=(e)=>{
+  const f=e.target.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    const rows=parseCSV(rd.result);
+    if(rows.length<2){ alert("データが読めません"); return; }
+    if(!confirm("CSVの内容で全データを置き換えます。よろしいですか？")) return;
+    DATA = rows.slice(1).filter(c=>c[1]).map((c,i)=>({id:"c"+i,m:c[0]||"トヨタ",n:c[1],aw:c[2]||"",l:c[3]||"",g:c[4]||"",y:c[5]||"",memo:c[6]||"",d:c[7]||""}));
+    persist(); buildChips(); render();
+  };
+  rd.readAsText(f);
+};
+function parseCSV(text){
+  text=text.replace(/^﻿/,"");
+  const rows=[]; let row=[],cur="",q=false;
+  for(let i=0;i<text.length;i++){ const ch=text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+    else { if(ch==='"') q=true; else if(ch===','){row.push(cur);cur="";} else if(ch==='\n'){row.push(cur);rows.push(row);row=[];cur="";} else if(ch!=='\r') cur+=ch; }
+  }
+  if(cur!==""||row.length){ row.push(cur); rows.push(row); }
+  return rows;
+}
+
+/* ===== 重量税 還付計算 ===== */
+// 月額重量税(円)。区分×車齢。自重計算タブの表に準拠（官公庁の月割額）
+const TAXM = {
+  "軽":      {u13:275, o13:350, o18:367, eco:208},
+  "1.0t以下":{u13:680, o13:950, o18:1050,eco:417},
+  "1.5t以下":{u13:1000,o13:1400,o18:1500,eco:600},
+  "2.0t以下":{u13:1360,o13:1900,o18:2100,eco:830},
+  "2.5t以下":{u13:1700,o13:2400,o18:2600,eco:1040},
+  "3.0t以下":{u13:2050,o13:2850,o18:3150,eco:1250}
+};
+function bracketByKg(kg){
+  if(!kg) return "";
+  if(kg<=1000) return "1.0t以下";
+  if(kg<=1500) return "1.5t以下";
+  if(kg<=2000) return "2.0t以下";
+  if(kg<=2500) return "2.5t以下";
+  return "3.0t以下";
+}
+function isKei(maker, name){
+  name=name||"";
+  if(maker==="ダイハツ") return true;
+  return /アルト|エブリイ|エヴリイ|キャリイ|キャリー|DA52V|DA62T|DA63T|DA16T|DB52T|64V|64W|プレオ|キャロル|クリッパー|ミライース|ハイゼット|アトレー|ワゴンR|スペーシア|タント|ムーヴ|ハスラー|ラパン|N-?BOX/.test(name);
+}
+// HV/EV＝エコカー本則を自動判定
+function isEco(name){
+  name=name||"";
+  return /HV|ＨＶ|ハイブリッド|プリウス|アクア|リーフ|インサイト|SAI/.test(name);
+}
+function yen(n){ return "¥"+Number(n).toLocaleString("ja-JP"); }
+function recalcTax(){
+  const ry=parseInt(document.getElementById("txRY").value,10);
+  const rm=parseInt(document.getElementById("txRM").value,10);
+  const age=document.getElementById("txAge").value;
+  const lag=parseInt(document.getElementById("txLag").value,10)||0;
+  const box=document.getElementById("taxResult");
+  const br=document.getElementById("txBracket").value;
+  if(!br){ box.innerHTML='<span class="dim">重量区分を選択してください</span>'; return; }
+  const monthly=TAXM[br][age];
+  let monthsLine, months=null;
+  if(ry>0 && rm>=1 && rm<=12){
+    const endIdx=(2018+ry)*12+rm;            // 満了の年月インデックス
+    const now=new Date(); const nowIdx=now.getFullYear()*12+(now.getMonth()+1);
+    months=Math.max(0, endIdx-nowIdx-lag);
+    const diff=endIdx-nowIdx;
+    monthsLine=`還付対象月数：<b>${months}か月</b> <span class="dim">（満了R${ry}/${rm} − 今${now.getFullYear()}/${now.getMonth()+1} ＝ ${diff}か月、手続き調整 −${lag}）</span>`;
+  } else {
+    monthsLine='還付対象月数：<span class="dim">車検満了（令和 年・月）を入力してください</span>';
+  }
+  let refundLine="";
+  if(months!=null){
+    const jrate=parseInt(document.getElementById("txJibai").value,10)||0;
+    const wtax=monthly*months, jibai=jrate*months, total=wtax+jibai;
+    refundLine=`<div style="margin-top:8px;border-top:1px dashed var(--line);padding-top:8px">`+
+      `重量税 還付：<b>${yen(wtax)}</b> <span class="dim">(${yen(monthly)}×${months})</span><br>`+
+      `自賠責 還付：<b>${yen(jibai)}</b> <span class="dim">(${yen(jrate)}×${months})</span>`+
+      `<div style="margin-top:6px;font-size:17px">合計 還付見込：<b style="color:var(--accent2)">${yen(total)}</b></div></div>`;
+  }
+  box.innerHTML=
+    `区分：<b>${br}</b>（${ {u13:"13年未満",o13:"13年経過",o18:"18年経過",eco:"エコカー"}[age] }）<br>`+
+    `月額重量税：<b>${yen(monthly)}</b>／月<br>`+
+    monthsLine+refundLine;
+}
+function openTaxCalc(weightStr, name, maker){
+  const m=String(weightStr||"").match(/\d+/);
+  const kg=m?parseInt(m[0],10):0;
+  document.getElementById("txBracket").value = isKei(maker,name) ? "軽" : bracketByKg(kg);
+  document.getElementById("txAge").value = isEco(name) ? "eco" : "u13";
+  document.getElementById("txLag").value="1";
+  document.getElementById("txJibai").value="500";
+  document.getElementById("txRY").value=""; document.getElementById("txRM").value="";
+  document.getElementById("taxTarget").textContent = name? ("対象：" + name + (weightStr?("（重量目安 "+weightStr+"kg）"):"")) : "手入力でも計算できます（重量区分を選択）";
+  recalcTax();
+  document.getElementById("taxOverlay").classList.add("open");
+}
+["txBracket","txRY","txRM","txAge","txLag","txJibai"].forEach(id=>{
+  const el=document.getElementById(id); el.addEventListener("input",recalcTax); el.addEventListener("change",recalcTax);
+});
+document.getElementById("taxBtn").onclick=()=>openTaxCalc("","");
+document.getElementById("taxClose").onclick=()=>document.getElementById("taxOverlay").classList.remove("open");
+document.getElementById("taxOverlay").onclick=(e)=>{ if(e.target.id==="taxOverlay") document.getElementById("taxOverlay").classList.remove("open"); };
+
+document.getElementById("syncBtn").onclick=syncPull;
+document.getElementById("cfgBtn").onclick=configSync;
+
+buildChips(); render();
+if(API()) syncPull(); else setStatus("同期オフ（ローカル保存）");
+</script>
+</body>
+</html>
