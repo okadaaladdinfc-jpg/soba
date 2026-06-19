@@ -67,7 +67,7 @@
 </head>
 <body>
 <header>
-  <div class="title">📈 相場表アプリ <small>野田ヤード / v1.3（車名「書付き」も金額横にバッジ）</small></div>
+  <div class="title">📈 相場表アプリ <small>野田ヤード / v1.4（年式に和暦併記）</small></div>
   <div class="toolbar">
     <input id="q" class="search" placeholder="車種・型式で検索（例: アルファード MNH15 / セレナ C26）">
     <div class="awtoggle" id="awToggle">
@@ -392,6 +392,9 @@ function normDate(s){
   if(!isNaN(t.getTime())) return t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0");
   return s;
 }
+// 西暦→和暦（年のみ。境界年は新元号優先）
+function wareki(y){ y=parseInt(y,10); if(!y) return ""; if(y>=2019) return "R"+(y-2018); if(y>=1989) return "H"+(y-1988); if(y>=1926) return "S"+(y-1925); return ""; }
+function toWareki(s){ const ys=String(s||"").match(/\d{4}/g); if(!ys) return ""; return ys.map(wareki).join("〜"); }
 function isRecent(d){ if(!d) return false; const t=new Date(d); return (Date.now()-t.getTime())/(86400000) <= RECENT_DAYS; }
 function priceCell(val, active){
   if(val==null||val==="") return '<span class="dim">—</span>';
@@ -435,7 +438,7 @@ function render(){
       <td>${priceCell(r.aw, awMode===1)}${(/書/.test(r.n)&&!String(r.aw).includes('書'))?' <span class="badge doc" title="車検書類付（車名に書付き表記）">書</span>':''}</td>
       <td>${priceCell(r.l, awMode===0)}</td>
       <td>${negin}</td>
-      <td class="dim" style="font-size:12px">${r.y||'—'}</td>
+      <td class="dim" style="font-size:12px;white-space:nowrap">${r.y?(r.y+'<br><span style="opacity:.75">'+toWareki(r.y)+'</span>'):'—'}</td>
       <td class="dim" style="font-size:12px;white-space:nowrap">${wt?wt+'<small style="color:var(--muted)">kg</small>':'—'}</td>
       <td class="dim" style="font-size:12px">${r.d||'—'}</td>
     </tr>`;
