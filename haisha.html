@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>配車管理システム｜野田ヤード v8.6</title>
+<title>配車管理システム｜野田ヤード v8.7</title>
 <style>
 :root{--p:#1a4f8b;--pl:#2563b0;--ac:#e8750a;--ok:#16a34a;--wn:#d97706;--ng:#dc2626;
 --bg:#f0f4f8;--card:#fff;--bd:#d1d9e0;--tx:#1e293b;--mu:#64748b;
@@ -166,8 +166,8 @@ tr:hover td{background:#f8fafc;}
 <header>
   <h1>🚛 配車管理システム</h1>
   <div class="dbadge" id="hdrDate"></div>
-  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v8.6</span>
-  <span style="font-size:11px;opacity:.7;">更新: 2026/06/24 v8.6</span>
+  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v8.7</span>
+  <span style="font-size:11px;opacity:.7;">更新: 2026/06/25 v8.7</span>
   <span id="syncBadge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.18);">…</span>
   <span style="display:flex;gap:6px;margin-left:auto;align-items:center;">
     <button class="btn btn-o btn-sm" onclick="setApiUrl()" title="クラウド共有のURL設定（GASのウェブアプリ exec URL）。空欄で共有オフ">⚙ 共有設定</button>
@@ -238,6 +238,9 @@ tr:hover td{background:#f8fafc;}
       <button class="btn btn-o" id="btnGeoFetch" onclick="fetchUnknownTravels()" style="font-size:13px;" title="登録外の市町村をマップ検索で特定し、野田からの実走行時間を取得します">🌐 不明地点の時間取得</button>
       <button class="btn btn-o" onclick="printSimple()" style="font-size:13px;" title="ドライバー・目安時間・会社名・地域・車両・希望時間をA4一枚に">🖨 簡易版印刷</button>
       <button class="btn btn-o btn-sm" onclick="window.print()">🖨️ 印刷</button>
+      <span style="width:1px;height:22px;background:var(--bd);margin:0 2px;"></span>
+      <button class="btn btn-o" onclick="sharePlan()" style="font-size:13px;" title="今表示中の配車計画（手動の入れ替え込み）をクラウドに共有。他PC・スマホで開けます">🔗 この配車を共有</button>
+      <button class="btn btn-o" onclick="openSharedPlan()" style="font-size:13px;" title="他PCで共有された配車計画を表示します">📥 共有された配車を見る</button>
     </div>
   </div>
   <div class="print-date-banner" id="printDateBanner">🚛 配車表</div>
@@ -673,7 +676,7 @@ function jsonp(url){ return new Promise((res,rej)=>{
 function cloudLoad(cb){
   setSync('loading');
   jsonp(API())
-    .then(d=>{ try{ if(d&&d.ok!==false) applyCloudData(d.data||d); }catch(e){console.error(e);} setSync('saved'); if(cb)cb(); })
+    .then(d=>{ try{ if(d&&d.ok!==false){ applyCloudData(d.data||d); window._SHARED=(d&&d.sharedPlan)||null; } }catch(e){console.error(e);} setSync('saved'); if(cb)cb(); })
     .catch(err=>{ console.error('load失敗',err); setSync('error'); if(cb)cb(); });
 }
 let _saveTimer=null;
@@ -690,6 +693,45 @@ function setSync(st){
   const map={loading:['☁ 読込中…','rgba(255,255,255,.25)'],saving:['☁ 同期中…','rgba(234,179,8,.4)'],saved:['☁ 同期済','rgba(34,197,94,.4)'],error:['⚠ 同期失敗','rgba(239,68,68,.5)']};
   const v=map[st]||map.saved; el.textContent=v[0]; el.style.background=v[1];
   el.title=(st==='error')?'保存に失敗しました。通信を確認してください':'クラウド（共有スプレッドシート）と同期しています';
+}
+
+// ★v8.7: 配車計画の共有（手動入れ替え込みでクラウドに保存→他PCで表示）
+function _planReplacer(k,v){ if(k==='trainee'||k==='traineeOf') return v?{id:v.id,name:v.name,traineeMode:v.traineeMode}:v; return v; }
+function serializePlan(p){
+  const base={
+    truckRoutes:p.truckRoutes, jisoRoutes:p.jisoRoutes, yardStf:p.yardStf,
+    warns:p.warns, cfg:p.cfg, unassT:p.unassT,
+    helpAssign:[...(p.helpAssign||new Map()).entries()].map(e=>[e[0], e[1]&&e[1].id]),
+    _sharedAt:Date.now()
+  };
+  // trainee/traineeOf を浅く＋循環の芽を断つためJSON往復で純粋オブジェクト化
+  return JSON.parse(JSON.stringify(base, _planReplacer));
+}
+function deserializePlan(o){
+  if(!o) return null;
+  if(typeof o==='string'){ try{o=JSON.parse(o);}catch(e){return null;} }
+  const map=new Map();
+  (o.helpAssign||[]).forEach(e=>{ const d=S.staff.find(s=>s.id===e[1]); if(d)map.set(e[0],d); });
+  o.helpAssign=map;
+  return o;
+}
+function sharePlan(){
+  if(!window._PLAN){ alert('先に「⚡ 配車を組む」を実行してください。'); return; }
+  if(!_CLOUD){ alert('クラウド共有がオンの時に使えます（右上の⚙共有設定でURLを設定してください）。'); return; }
+  setSync('saving');
+  const planObj=serializePlan(window._PLAN);
+  fetch(API(),{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'savePlan',plan:planObj})})
+    .then(()=>{ setSync('saved'); window._SHARED=planObj; alert('この配車を共有しました。\n他のPC・スマホでは「📥 共有された配車を見る」で開けます。'); })
+    .catch(err=>{ console.error(err); setSync('error'); alert('共有に失敗しました。通信を確認してください。'); });
+}
+function openSharedPlan(){
+  if(!window._SHARED){ alert('まだ共有された配車はありません。\n（他のPCで「🔗 この配車を共有」を押すと、ここで開けます）'); return; }
+  const p=deserializePlan(JSON.parse(JSON.stringify(window._SHARED)));
+  if(!p){ alert('共有データの読み込みに失敗しました。'); return; }
+  sw('plan');
+  renderPlan(p);
+  const t=window._SHARED._sharedAt? new Date(window._SHARED._sharedAt).toLocaleString() : '';
+  alert('共有された配車を表示しました'+(t?`（共有時刻：${t}）`:'')+'。\n※「⚡ 配車を組む」を押すと自分の入力から再計算され、表示は置き換わります。');
 }
 
 // ─── Tabs ───
