@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>配車管理システム｜野田ヤード v9.0</title>
+<title>配車管理システム｜野田ヤード v9.1</title>
 <style>
 :root{--p:#1a4f8b;--pl:#2563b0;--ac:#e8750a;--ok:#16a34a;--wn:#d97706;--ng:#dc2626;
 --bg:#f0f4f8;--card:#fff;--bd:#d1d9e0;--tx:#1e293b;--mu:#64748b;
@@ -166,8 +166,8 @@ tr:hover td{background:#f8fafc;}
 <header>
   <h1>🚛 配車管理システム</h1>
   <div class="dbadge" id="hdrDate"></div>
-  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v9.0</span>
-  <span style="font-size:11px;opacity:.7;">更新: 2026/06/30 v9.0</span>
+  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v9.1</span>
+  <span style="font-size:11px;opacity:.7;">更新: 2026/06/30 v9.1</span>
   <span id="syncBadge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.18);">…</span>
   <span style="display:flex;gap:6px;margin-left:auto;align-items:center;">
     <button class="btn btn-o btn-sm" onclick="setApiUrl()" title="クラウド共有のURL設定（GASのウェブアプリ exec URL）。空欄で共有オフ">⚙ 共有設定</button>
@@ -1925,6 +1925,11 @@ const CITY_DEFAULT_TRAVEL={'野田市':10,'流山市':15,'松戸市':20,'柏市'
 // 千葉市内・近郊（50分未満）
 '千葉市':55,'習志野市':40,'船橋市':60,'市川市':25,'浦安市':30, // 船橋は昼間渋滞で60分超・要確認
 '四街道市':60,'印西市':40,'白井市':35,'鎌ケ谷市':25,
+// 西東京（都県デフォルト50分では過小＝青梅+台東等の誤ペア原因。実勢に補正）★v9.1
+'青梅市':80,'あきる野市':80,'羽村市':75,'福生市':75,'昭島市':75,'立川市':70,'日野市':80,
+'多摩市':80,'稲城市':70,'武蔵村山市':70,'東大和市':65,'国立市':70,'国分寺市':65,'府中市':70,
+'調布市':60,'狛江市':60,'三鷹市':60,'武蔵野市':60,'小金井市':65,'小平市':65,'東村山市':60,
+'清瀬市':55,'東久留米市':55,'西東京市':55,
 // 山梨県（ppが未設定でも正しく遠方判定されるよう明示）
 '甲斐市':130,'甲府市':125,'南アルプス市':135,'笛吹市':130,'山梨市':135,
 '北杜市':145,'韮崎市':140,'上野原市':115,'大月市':120,
@@ -1962,15 +1967,16 @@ function pairDirOK(a,b){
   const da=getDir(a.pp,a.pc), db=getDir(b.pp,b.pc);
   if(isOppositeDir(da,db)) return false; // 逆方向は常にNG
   const ra=getRoute(a.pp,a.pc), rb=getRoute(b.pp,b.pc);
-  // ① 両方が首都圏(≤60分) → 方向差45°以内。ただし路線が明確に違えば別エリア扱いでNG
-  //    （getDirは東京都を市区別に分けず全部southにするため、台東shuto↔青梅gaikanは路線で判別）
-  if(ta<=60&&tb<=60){
-    if(dirDiff(da,db)>45) return false;
-    if(ra!=='unknown'&&rb!=='unknown'&&ra!==rb) return false;
+  // ① 両方が首都圏(≤60分)＝実際に近い → 方向差45°以内でOK（近場は路線データが近接を反映しない
+  //    ＝台東shuto/取手kenodo/龍ケ崎joban等がバラけるため、近場では路線を見ない）
+  if(ta<=60&&tb<=60) return dirDiff(da,db)<=45;
+  // ② 中距離以上(>60分)を含む → 同一路線コリドー必須（山梨chuo↔神奈川tomeiのような別コリドーを排除）
+  if(ra!=='unknown'&&rb!=='unknown'){
+    if(ra!==rb) return false;
+    // ★環状路線(外環/圏央道)は同一コリドーでも弧の反対側があり得る→方角一致(45°以内)も要求（青梅↔松戸等を防ぐ）
+    if((ra==='gaikan'||ra==='kenodo')&&dirDiff(da,db)>45) return false;
     return true;
   }
-  // ② 中距離以上(>60分)を含む → 同一路線コリドー必須（山梨chuo↔神奈川tomeiのような別コリドーを排除）
-  if(ra!=='unknown'&&rb!=='unknown') return ra===rb;
   // ③ 路線不明はフォールバック（方向45°以内＋野田からの所要時間差75分以内）
   return dirDiff(da,db)<=45&&Math.abs(ta-tb)<=PAIR_DIST_CAP;
 }
@@ -3880,6 +3886,53 @@ function _genPlanCore(){
     }
   }));
 
+  // ★v9.1: 同一市区町村の再結合＋単発補充 — ✂ペア分離の後に実行（分離で生まれた単発を救う）
+  // (1)別便の同一市案件を引き抜き同便ペアへ (2)未割当の同一市案件を回収 (3)未割当の方向互換案件で単発を補充
+  {
+    const allT=[];
+    truckRoutes.forEach(r=>r.trips.forEach(t=>allT.push({r,t})));
+    const _NLr=j=>j.isLo||j.isHiRoof;
+    allT.filter(x=>x.t.jobs.length===1&&!isTanpatsu(x.t.jobs[0])).forEach(sa=>{
+      if(sa.t.jobs.length!==1)return; // 既に他の集約で変化した便はスキップ
+      const A=sa.t.jobs[0];
+      // (1) 別便から同一市を引き抜く
+      if(A.pc){
+        for(const xb of allT){
+          if(xb.t===sa.t||!xb.t.jobs.length)continue;
+          const bi=xb.t.jobs.findIndex(j=>j.id!==A.id&&j.pc===A.pc&&!isTanpatsu(j)
+            &&!(_NLr(A)&&_NLr(j))&&!(j.isMT&&sa.r.drv.atOnly)
+            &&!(getEffectiveSlot(j)==='am'&&sa.t.n>2)); // AMは①②のみ
+          if(bi<0)continue;
+          const B=xb.t.jobs.splice(bi,1)[0];
+          sa.t.jobs.push(B);
+          warns.push({lv:'wn',msg:`🏙【同一市ペア】${A.pc}：${A.vehicle}+${B.vehicle} を${sa.r.drv.name}${sa.t.n}便に集約（同じ市は同便で引き取り）`});
+          if(xb.t.jobs.length===0){
+            const idx=xb.r.trips.indexOf(xb.t);
+            if(idx>=0){xb.r.trips.splice(idx,1);xb.r.trips.forEach((tt,ii)=>tt.n=ii+1);drvTrips.set(xb.r.drv.id,xb.r.trips.length);}
+          }
+          return;
+        }
+      }
+      // (2) 未割当から同一市を回収
+      let ui=A.pc?unassT.findIndex(j=>j.pc===A.pc&&!isTanpatsu(j)
+        &&!(_NLr(A)&&_NLr(j))&&!(j.isMT&&sa.r.drv.atOnly)
+        &&!(getEffectiveSlot(j)==='am'&&sa.t.n>2)):-1;
+      let uLbl='同一市ペア・未割当から回収';
+      // (3) 同一市が無ければ、方向/距離互換の未割当（AM以外）で単発を補充
+      if(ui<0){
+        ui=unassT.findIndex(j=>getEffectiveSlot(j)!=='am'&&!isTanpatsu(j)&&pairDirOK(A,j)
+          &&!(_NLr(A)&&_NLr(j))&&!(j.isMT&&sa.r.drv.atOnly));
+        uLbl='単発解消・未割当から補充（手動確認推奨）';
+      }
+      if(ui>=0){
+        const B=unassT.splice(ui,1)[0];
+        assignedT.add(B.id);
+        sa.t.jobs.push(B);
+        warns.push({lv:'wn',msg:`🏙【${uLbl}】${A.vehicle}（${A.pc}）+${B.vehicle}（${B.pc}）→ ${sa.r.drv.name}${sa.t.n}便`});
+      }
+    });
+  }
+
   // ★v6.2: 統合しきれなかった1台便（単発対象外）を赤字警告で明示
   truckRoutes.forEach(r=>r.trips.forEach(t=>{
     if(t.jobs.length===1&&!isTanpatsu(t.jobs[0]))
@@ -4042,6 +4095,13 @@ function _genPlanCore(){
     if(_wt>30)
       warns.push({lv:'wn',msg:`⏳【現地待機${Math.round(_wt)}分】${r.drv.name}${t.n}便：時間指定の開始待ちが30分超えています。ドラッグで後の便に移すか他ドライバーへ配車を検討してください。`});
   }));
+  // ★v9.1: 自走便の順序をAM優先に最終整列（後段の追加パスでAM案件が②以降に押されるのを防ぐ）
+  jisoRoutes.forEach(r=>{
+    if(r.jobs&&r.jobs.length>1){
+      const _w=j=>{const s=getEffectiveSlot(j);return s==='am'?0:s==='pm'?2:1;};
+      r.jobs.sort((a,b)=>_w(a)-_w(b));
+    }
+  });
   renderPlan({truckRoutes,jisoRoutes,yardStf,warns,cfg,helpAssign,unassT});
 }
 
