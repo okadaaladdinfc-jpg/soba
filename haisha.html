@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>配車管理システム｜野田ヤード v9.1</title>
+<title>配車管理システム｜野田ヤード v9.2</title>
 <style>
 :root{--p:#1a4f8b;--pl:#2563b0;--ac:#e8750a;--ok:#16a34a;--wn:#d97706;--ng:#dc2626;
 --bg:#f0f4f8;--card:#fff;--bd:#d1d9e0;--tx:#1e293b;--mu:#64748b;
@@ -166,8 +166,8 @@ tr:hover td{background:#f8fafc;}
 <header>
   <h1>🚛 配車管理システム</h1>
   <div class="dbadge" id="hdrDate"></div>
-  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v9.1</span>
-  <span style="font-size:11px;opacity:.7;">更新: 2026/06/30 v9.1</span>
+  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v9.2</span>
+  <span style="font-size:11px;opacity:.7;">更新: 2026/07/10 v9.2</span>
   <span id="syncBadge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.18);">…</span>
   <span style="display:flex;gap:6px;margin-left:auto;align-items:center;">
     <button class="btn btn-o btn-sm" onclick="setApiUrl()" title="クラウド共有のURL設定（GASのウェブアプリ exec URL）。空欄で共有オフ">⚙ 共有設定</button>
@@ -3892,6 +3892,33 @@ function _genPlanCore(){
     const allT=[];
     truckRoutes.forEach(r=>r.trips.forEach(t=>allT.push({r,t})));
     const _NLr=j=>j.isLo||j.isHiRoof;
+    // ★v9.2 (0): ペア済み同士の同一市も組み替える（練馬+青梅/練馬+横浜 → 練馬+練馬）
+    // trip1=[X,A] trip2=[Y,B] (A.pc===B.pc) → trip1=[A,B] trip2=[Y,X]（双方の制約を確認できた時のみ）
+    {
+      const fits=(job,x)=>!(job.isMT&&x.r.drv.atOnly)
+        &&(!x.r.truck||checkCompat(x.r.truck,job).ok)
+        &&!(getEffectiveSlot(job)==='am'&&x.t.n>2);
+      const cityMap={};
+      allT.forEach(x=>x.t.jobs.forEach(j=>{if(j.pc&&!isTanpatsu(j))(cityMap[j.pc]=cityMap[j.pc]||[]).push({x,j});}));
+      Object.keys(cityMap).forEach(pc=>{
+        const ents=cityMap[pc];
+        if(ents.length<2)return;
+        const a=ents[0],b=ents.find(e=>e.x.t!==a.x.t);
+        if(!b)return; // 既に同便
+        if(a.x.t.jobs.length!==2||b.x.t.jobs.length!==2)return; // 単発絡みは既存(1)(2)が処理
+        const A=a.j,B=b.j;
+        const X=a.x.t.jobs.find(j=>j!==A),Y=b.x.t.jobs.find(j=>j!==B);
+        if(!X||!Y)return;
+        const sw=(recv,give,P1,P2,part1,part2)=>{ // recv側に[P1,P2]、give側に[part1,part2]
+          recv.t.jobs=[P1,P2];give.t.jobs=[part1,part2];
+          warns.push({lv:'wn',msg:`🏙【同一市ペア・入替】${pc}：${P1.vehicle}+${P2.vehicle} を${recv.r.drv.name}${recv.t.n}便に集約（相方${part2.vehicle}は${give.r.drv.name}${give.t.n}便へ）`});
+        };
+        // 方向1: B→a便 / X→b便
+        if(fits(B,a.x)&&fits(X,b.x)&&!(_NLr(A)&&_NLr(B))&&!(_NLr(Y)&&_NLr(X))&&pairDirOK(Y,X)){sw(a.x,b.x,A,B,Y,X);return;}
+        // 方向2: A→b便 / Y→a便
+        if(fits(A,b.x)&&fits(Y,a.x)&&!(_NLr(B)&&_NLr(A))&&!(_NLr(X)&&_NLr(Y))&&pairDirOK(X,Y)){sw(b.x,a.x,B,A,X,Y);return;}
+      });
+    }
     allT.filter(x=>x.t.jobs.length===1&&!isTanpatsu(x.t.jobs[0])).forEach(sa=>{
       if(sa.t.jobs.length!==1)return; // 既に他の集約で変化した便はスキップ
       const A=sa.t.jobs[0];
@@ -4100,6 +4127,32 @@ function _genPlanCore(){
     if(r.jobs&&r.jobs.length>1){
       const _w=j=>{const s=getEffectiveSlot(j);return s==='am'?0:s==='pm'?2:1;};
       r.jobs.sort((a,b)=>_w(a)-_w(b));
+    }
+  });
+  // ★v9.2: 車両適合の最終総点検 ──────────────────────
+  // どの経路（救済/統合/入替/同一市含む）で積まれても、確定結果を全便再走査。
+  // ・R-W/R-P/R-L等のcheckCompat NGを検出（救済パスは無検査のため、ここで必ず拾う）
+  // ・上段制限（306号車=軽のみ）と上段1.5t超の横転リスクを全便で判定（上段=dk指定 or ソート後先頭）
+  truckRoutes.forEach(r=>{
+    const truck=r.truck;
+    const fresh=[];
+    r.trips.forEach(t=>{
+      if(truck)t.jobs.forEach(job=>{
+        const c=checkCompat(truck,job);
+        if(!c.ok)fresh.push(...c.issues.map(i=>`${job.vehicle}：${i}`));
+      });
+      if(t.jobs.length>=2){
+        const up=t.jobs.find(j=>j.dk==='upper')||t.jobs[0];
+        if(truck&&truck.upperLimit==='kei'&&!up.isKei)
+          warns.push({lv:'er',msg:`🔴【上段制限】${r.drv.name}${t.n}便（${truck.num}号車＝上段は軽のみ）：上段想定の${up.vehicle}が軽自動車ではありません。積み分け変更か号車変更が必要です`});
+        if(up.w&&up.w>1.5)
+          warns.push({lv:'wn',msg:`⚠【上段重量】${r.drv.name}${t.n}便：${up.vehicle}（${up.w}t）が上段想定 → 1.5t超は横転リスク。下段配置/単独便を検討してください`});
+      }
+    });
+    if(truck){
+      fresh.filter(i=>!r.compatW.includes(i)).forEach(i=>
+        warns.push({lv:'er',msg:`🔴【車両不適合・要対応】${r.drv.name}（${truck.num}号車）：${i} — 救済割当等で積まれています。号車変更かドラッグで入替してください`}));
+      r.compatW=fresh; // ルートカードの表示も最終状態に更新
     }
   });
   renderPlan({truckRoutes,jisoRoutes,yardStf,warns,cfg,helpAssign,unassT});
