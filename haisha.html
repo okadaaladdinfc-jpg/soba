@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>配車管理システム｜野田ヤード v9.5</title>
+<title>配車管理システム｜野田ヤード v9.6</title>
 <style>
 :root{--p:#1a4f8b;--pl:#2563b0;--ac:#e8750a;--ok:#16a34a;--wn:#d97706;--ng:#dc2626;
 --bg:#f0f4f8;--card:#fff;--bd:#d1d9e0;--tx:#1e293b;--mu:#64748b;
@@ -166,8 +166,8 @@ tr:hover td{background:#f8fafc;}
 <header>
   <h1>🚛 配車管理システム</h1>
   <div class="dbadge" id="hdrDate"></div>
-  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v9.5</span>
-  <span style="font-size:11px;opacity:.7;">更新: 2026/07/11 v9.5</span>
+  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v9.6</span>
+  <span style="font-size:11px;opacity:.7;">更新: 2026/07/12 v9.6</span>
   <span id="syncBadge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.18);">…</span>
   <span style="display:flex;gap:6px;margin-left:auto;align-items:center;">
     <button class="btn btn-o btn-sm" onclick="setApiUrl()" title="クラウド共有のURL設定（GASのウェブアプリ exec URL）。空欄で共有オフ">⚙ 共有設定</button>
@@ -2025,19 +2025,41 @@ function pairDirOK(a,b){
   const ta=estimateTravel(a), tb=estimateTravel(b);
   const da=getDir(a.pp,a.pc), db=getDir(b.pp,b.pc);
   if(isOppositeDir(da,db)) return false; // 逆方向は常にNG
-  const ra=getRoute(a.pp,a.pc), rb=getRoute(b.pp,b.pc);
+  const ra=getRoutesOf(a), rb=getRoutesOf(b);
   // ① 両方が首都圏(≤60分)＝実際に近い → 方向差45°以内でOK（近場は路線データが近接を反映しない
   //    ＝台東shuto/取手kenodo/龍ケ崎joban等がバラけるため、近場では路線を見ない）
   if(ta<=60&&tb<=60) return dirDiff(da,db)<=45;
-  // ② 中距離以上(>60分)を含む → 同一路線コリドー必須（山梨chuo↔神奈川tomeiのような別コリドーを排除）
-  if(ra!=='unknown'&&rb!=='unknown'){
-    if(ra!==rb) return false;
-    // ★環状路線(外環/圏央道)は同一コリドーでも弧の反対側があり得る→方角一致(45°以内)も要求（青梅↔松戸等を防ぐ）
-    if((ra==='gaikan'||ra==='kenodo')&&dirDiff(da,db)>45) return false;
+  // ② 中距離以上(>60分)を含む → 路線コリドーが交差すること（★v9.6: 帰り道の第2路線RETURN_ROUTEも考慮。
+  //    例: 北杜(中央道)+青梅(中央道帰りに寄れる)=OK / 大和(東名)+狛江(東名帰り)=OK / 都留+川口は交差なし=NG）
+  if(ra.length&&rb.length){
+    const shared=ra.filter(x=>rb.includes(x));
+    if(!shared.length) return false;
+    // ★環状路線(外環/圏央道)のみで繋がる場合は弧の反対側があり得る→方角一致(45°以内)も要求（青梅↔松戸等を防ぐ）
+    if(shared.every(x=>x==='gaikan'||x==='kenodo')&&dirDiff(da,db)>45) return false;
     return true;
   }
   // ③ 路線不明はフォールバック（方向45°以内＋野田からの所要時間差75分以内）
   return dirDiff(da,db)<=45&&Math.abs(ta-tb)<=PAIR_DIST_CAP;
+}
+// ★v9.6: 帰り道の第2路線 — 高速の帰路上に位置する近場市は、その路線の遠方案件と「帰りに寄る」ペアが可能
+const RETURN_ROUTE={
+  // 中央道の帰り（八王子IC〜圏央道あきる野〜青梅方面）
+  '青梅市':'chuo','あきる野市':'chuo','羽村市':'chuo','福生市':'chuo','八王子市':'chuo','立川市':'chuo',
+  '昭島市':'chuo','日野市':'chuo','国立市':'chuo','国分寺市':'chuo','東大和市':'chuo','武蔵村山市':'chuo','調布市':'chuo','府中市':'chuo',
+  // 東名・第三京浜の帰り（世田谷・狛江・川崎方面）
+  '狛江市':'tomei','世田谷区':'tomei','川崎市':'tomei','町田市':'tomei','多摩市':'tomei','稲城市':'tomei',
+  // 神奈川の圏央道沿い＝東名圏でもある（座間+小田原、大和+狛江などのペアを可能に）
+  '座間市':'tomei','大和市':'tomei','海老名市':'tomei','厚木市':'tomei','綾瀬市':'tomei','伊勢原市':'tomei','相模原市':'tomei','藤沢市':'tomei','茅ヶ崎市':'tomei','平塚市':'tomei',
+};
+function getRoutesOf(j){
+  const r=[];
+  const r1=getRoute(j.pp,j.pc);
+  if(r1!=='unknown')r.push(r1);
+  const pc=j.pc||'';
+  for(const k of Object.keys(RETURN_ROUTE)){
+    if(pc===k||pc.indexOf(k)===0){if(!r.includes(RETURN_ROUTE[k]))r.push(RETURN_ROUTE[k]);break;}
+  }
+  return r;
 }
 
 // ─── DISPATCH ENGINE ───
@@ -3962,6 +3984,54 @@ function _genPlanCore(){
     }
   }));
 
+  // ★v9.6: 遠方単発カスケード — 「遠くから少しずつペアをずらす」（現場方針）
+  //   最遠の単発便から順に、他のペア便から最も距離の近い相方を一段ずつ奪って組む。
+  //   奪われた側は単発になり、次の反復 or 同一市/補充パスで近い側の相方・未割当を拾う。
+  {
+    const _NLc=j=>j.isLo||j.isHiRoof;
+    const movedOnce=new Set();
+    for(let iter=0;iter<12;iter++){
+      // 遠方(≥80分)の1台便を遠い順に
+      const singles=[];
+      truckRoutes.forEach(r=>r.trips.forEach(t=>{
+        if(t.jobs.length===1&&!isTanpatsu(t.jobs[0])&&estimateTravel(t.jobs[0])>=80)singles.push({r,t});
+      }));
+      singles.sort((a,b)=>estimateTravel(b.t.jobs[0])-estimateTravel(a.t.jobs[0]));
+      let did=false;
+      for(const s of singles){
+        if(s.t.jobs.length!==1)continue;
+        const F=s.t.jobs[0];
+        // 相方候補: 他の2台便のジョブで、Fより近く・方向/路線・適合・重量OK・未移動
+        let best=null,bestT=-1;
+        truckRoutes.forEach(r2=>r2.trips.forEach(t2=>{
+          if(t2===s.t||t2.jobs.length!==2)return;
+          t2.jobs.forEach(P=>{
+            if(movedOnce.has(P.id)||isTanpatsu(P))return;
+            const tp=estimateTravel(P);
+            if(tp>=estimateTravel(F))return;          // 必ず近い側から奪う（無限ループ防止）
+            if(!pairDirOK(F,P))return;
+            if(_NLc(F)&&_NLc(P))return;
+            if(P.isMT&&s.r.drv.atOnly)return;
+            if(s.r.truck&&!checkCompat(s.r.truck,P).ok)return;
+            if(!pairWOK(s.r.truck,F,P))return;
+            if(getEffectiveSlot(P)==='am'&&s.t.n>1)return; // AMは1便目のみ
+            if(tp>bestT){bestT=tp;best={P,t2,r2};}
+          });
+        }));
+        if(best){
+          const{P,t2,r2}=best;
+          t2.jobs.splice(t2.jobs.indexOf(P),1);
+          s.t.jobs.push(P);
+          movedOnce.add(P.id);
+          did=true;
+          warns.push({lv:'wn',msg:`🔗【遠方ペアシフト】${F.vehicle}（${F.pc||F.pp}）に ${P.vehicle}（${P.pc||P.pp}）を組付け（${r2.drv.name}${t2.n}便から移動・遠い順にペアを詰める方針）`});
+          break; // 1回の反復で1移動→singlesを再評価
+        }
+      }
+      if(!did)break;
+    }
+  }
+
   // ★v9.1: 同一市区町村の再結合＋単発補充 — ✂ペア分離の後に実行（分離で生まれた単発を救う）
   // (0)ペア済み同士の入替 (1)別便の同一市案件を引き抜き (2)未割当の同一市を回収 (3)未割当の方向互換で単発補充
   // ★v9.3: 市名を正規化して比較（横浜市中区↔横浜市港北区も同一市）。(0)を補充後にも再実行（補充で生まれた同一市分裂を救う）
@@ -4282,6 +4352,27 @@ function _genPlanCore(){
         drvTrips.set(r.drv.id,r.trips.length);
         r.daySchedule=calcDaySched(r.trips,r.drv,cfg);
       }
+    });
+    // ★v9.6: AM先行便の再試行 — 割当解除で戻ったAMを、時間制約のないドライバーの1便目に前挿入して救済
+    //   （例: 都留×2=時間フリーのドライバーが、近場AMを先にこなしてから都留へ向かう）
+    truckRoutes.forEach(r=>{
+      if(r.trips.length<1||r.trips.length>2)return;
+      if(!r.trips.every(t=>t.jobs.every(j=>getEffectiveSlot(j)!=='am'&&!(j.timeSlot==='time'&&j.time))))return;
+      const truck=r.truck,drv=r.drv;
+      const okB=j=>!isTanpatsu(j)&&!(j.isMT&&drv.atOnly)&&(!truck||checkCompat(truck,j).ok)&&estimateTravel(j)<=90;
+      const ai=unassT.findIndex(j=>okB(j)&&getEffectiveSlot(j)==='am');
+      if(ai<0)return;
+      const j1=unassT.splice(ai,1)[0];
+      assignedT.add(j1.id);
+      const jobs=[j1];
+      const _NL2=j=>j.isLo||j.isHiRoof;
+      const m2=unassT.findIndex(j=>okB(j)&&pairDirOK(j1,j)&&!(_NL2(j1)&&_NL2(j))&&pairWOK(truck,j1,j));
+      if(m2>=0){const j2=unassT.splice(m2,1)[0];assignedT.add(j2.id);jobs.push(j2);}
+      r.trips.splice(0,0,{n:1,jobs,amFront:true});
+      r.trips.forEach((tt,ii)=>tt.n=ii+1);
+      drvTrips.set(drv.id,r.trips.length);
+      r.daySchedule=calcDaySched(r.trips,r.drv,cfg);
+      warns.push({lv:'wn',msg:`🌅【AM先行便】${drv.name}：${jobs.map(j=>`${j.vehicle}（${j.pc||j.pp}）`).join('+')} を1便目に挿入（既存便は時間フリーのため後ろへ）`});
     });
   }
   // ★v5.8: 時間指定待ちの長時間現地待機を警告（後の便に回す方が効率的）
