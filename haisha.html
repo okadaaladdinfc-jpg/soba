@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>配車管理システム｜野田ヤード v9.4</title>
+<title>配車管理システム｜野田ヤード v9.5</title>
 <style>
 :root{--p:#1a4f8b;--pl:#2563b0;--ac:#e8750a;--ok:#16a34a;--wn:#d97706;--ng:#dc2626;
 --bg:#f0f4f8;--card:#fff;--bd:#d1d9e0;--tx:#1e293b;--mu:#64748b;
@@ -166,8 +166,8 @@ tr:hover td{background:#f8fafc;}
 <header>
   <h1>🚛 配車管理システム</h1>
   <div class="dbadge" id="hdrDate"></div>
-  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v9.4</span>
-  <span style="font-size:11px;opacity:.7;">更新: 2026/07/11 v9.4</span>
+  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v9.5</span>
+  <span style="font-size:11px;opacity:.7;">更新: 2026/07/11 v9.5</span>
   <span id="syncBadge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.18);">…</span>
   <span style="display:flex;gap:6px;margin-left:auto;align-items:center;">
     <button class="btn btn-o btn-sm" onclick="setApiUrl()" title="クラウド共有のURL設定（GASのウェブアプリ exec URL）。空欄で共有オフ">⚙ 共有設定</button>
@@ -2273,6 +2273,21 @@ function _genPlanCore(){
         // AM指定チェック（軽量版）
         const effSlot=getEffectiveSlot(job);
         if(effSlot==='am'&&(drvDone.get(drv.id)||tgt)+estimateTravel(job)>12*60)continue;
+        // ★v9.5: 重量ペア優先 — 同一路線の理想的な遠方ペアが「重量だけ」で組めない場合、
+        //   このドライバーには渡さず、積める大型車ドライバーの番まで送る（伊豆BMW+フーガ→3.5t車）
+        if(truck&&!isTanpatsu(job)){
+          const heavyMate=farPreJobs.find(j=>!assignedT.has(j.id)&&j.id!==job.id&&!isTanpatsu(j)
+            &&pairDirOK(job,j)&&!pairWOK(truck,job,j));
+          if(heavyMate){
+            const _aw=estimateW(job).w,_bw=estimateW(heavyMate).w;
+            const bigger=prePool.find(d2=>{
+              if(usedPrePool.has(d2.id)||d2.id===drv.id)return false;
+              const t2=getTruck(d2);
+              return t2&&_aw&&_bw&&(_aw+_bw)<=t2.maxW&&canAssign(d2,t2,job)&&canAssign(d2,t2,heavyMate);
+            });
+            if(bigger)continue;
+          }
+        }
         // j2ペアリング（単発化防止）
         // 同都道府県→同方向→逆方向でない の優先順で探す
         let j2=null;
@@ -3958,7 +3973,7 @@ function _genPlanCore(){
     const doSameCitySwaps=()=>{ // ★v9.2 (0)→★v9.3: 関数化して2回実行
       const fits=(job,x)=>!(job.isMT&&x.r.drv.atOnly)
         &&(!x.r.truck||checkCompat(x.r.truck,job).ok)
-        &&!(getEffectiveSlot(job)==='am'&&x.t.n>2);
+        &&!(getEffectiveSlot(job)==='am'&&x.t.n>1); // ★v9.5: AMは1便目のみ（2便目は到着が正午超えのため）
       const cityMap={};
       allT.forEach(x=>x.t.jobs.forEach(j=>{const ck=cityKey(j.pc);if(ck&&!isTanpatsu(j))(cityMap[ck]=cityMap[ck]||[]).push({x,j});}));
       Object.keys(cityMap).forEach(pc=>{
@@ -3974,8 +3989,8 @@ function _genPlanCore(){
           recv.t.jobs=[P1,P2];give.t.jobs=[part1,part2];
           warns.push({lv:'wn',msg:`🏙【同一市ペア・入替】${pc}：${P1.vehicle}+${P2.vehicle} を${recv.r.drv.name}${recv.t.n}便に集約（相方${part2.vehicle}は${give.r.drv.name}${give.t.n}便へ）`});
         };
-        if(fits(B,a.x)&&fits(X,b.x)&&!(_NLr(A)&&_NLr(B))&&!(_NLr(Y)&&_NLr(X))&&pairDirOK(Y,X)){sw(a.x,b.x,A,B,Y,X);return;}
-        if(fits(A,b.x)&&fits(Y,a.x)&&!(_NLr(B)&&_NLr(A))&&!(_NLr(X)&&_NLr(Y))&&pairDirOK(X,Y)){sw(b.x,a.x,B,A,X,Y);return;}
+        if(fits(B,a.x)&&fits(X,b.x)&&!(_NLr(A)&&_NLr(B))&&!(_NLr(Y)&&_NLr(X))&&pairDirOK(Y,X)&&pairWOK(a.x.r.truck,A,B)&&pairWOK(b.x.r.truck,Y,X)){sw(a.x,b.x,A,B,Y,X);return;}
+        if(fits(A,b.x)&&fits(Y,a.x)&&!(_NLr(B)&&_NLr(A))&&!(_NLr(X)&&_NLr(Y))&&pairDirOK(X,Y)&&pairWOK(b.x.r.truck,B,A)&&pairWOK(a.x.r.truck,X,Y)){sw(b.x,a.x,B,A,X,Y);return;}
       });
     };
     doSameCitySwaps();
@@ -3989,11 +4004,12 @@ function _genPlanCore(){
         const hit=allT.find(x=>x.t.jobs.length===2&&x.t.jobs.some(j=>cityKey(j.pc)===ckB&&!isTanpatsu(j))
           &&!(B.isMT&&x.r.drv.atOnly)
           &&(!x.r.truck||checkCompat(x.r.truck,B).ok)
-          &&!(getEffectiveSlot(B)==='am'&&x.t.n>2));
+          &&!(getEffectiveSlot(B)==='am'&&x.t.n>1)); // ★v9.5: AMは1便目のみ
         if(!hit)continue;
         const A=hit.t.jobs.find(j=>cityKey(j.pc)===ckB);
         const X=hit.t.jobs.find(j=>j!==A);
         if(!A||!X||(_NLr(A)&&_NLr(B)))continue;
+        if(!pairWOK(hit.r.truck,A,B))continue; // ★v9.5: 重量ガード
         hit.t.jobs=[A,B];
         unassT.splice(ui,1);assignedT.add(B.id);
         assignedT.delete(X.id);unassT.push(X);
@@ -4010,7 +4026,8 @@ function _genPlanCore(){
           if(xb.t===sa.t||!xb.t.jobs.length)continue;
           const bi=xb.t.jobs.findIndex(j=>j.id!==A.id&&cityKey(j.pc)===ckA&&!isTanpatsu(j)
             &&!(_NLr(A)&&_NLr(j))&&!(j.isMT&&sa.r.drv.atOnly)
-            &&!(getEffectiveSlot(j)==='am'&&sa.t.n>2)); // AMは①②のみ
+            &&(!sa.r.truck||checkCompat(sa.r.truck,j).ok)&&pairWOK(sa.r.truck,A,j) // ★v9.5: 適合+重量
+            &&!(getEffectiveSlot(j)==='am'&&sa.t.n>1)); // ★v9.5: AMは1便目のみ
           if(bi<0)continue;
           const B=xb.t.jobs.splice(bi,1)[0];
           sa.t.jobs.push(B);
@@ -4025,12 +4042,14 @@ function _genPlanCore(){
       // (2) 未割当から同一市を回収（AMは①②便のみ）
       let ui=ckA?unassT.findIndex(j=>cityKey(j.pc)===ckA&&!isTanpatsu(j)
         &&!(_NLr(A)&&_NLr(j))&&!(j.isMT&&sa.r.drv.atOnly)
-        &&!(getEffectiveSlot(j)==='am'&&sa.t.n>2)):-1;
+        &&(!sa.r.truck||checkCompat(sa.r.truck,j).ok)&&pairWOK(sa.r.truck,A,j) // ★v9.5: 適合+重量
+        &&!(getEffectiveSlot(j)==='am'&&sa.t.n>1)):-1;
       let uLbl='同一市ペア・未割当から回収';
       // (3) 同一市が無ければ、方向/距離互換の未割当で単発を補充（★v9.3: AMも①②便なら可）
       if(ui<0){
-        ui=unassT.findIndex(j=>!(getEffectiveSlot(j)==='am'&&sa.t.n>2)&&!isTanpatsu(j)&&pairDirOK(A,j)
-          &&!(_NLr(A)&&_NLr(j))&&!(j.isMT&&sa.r.drv.atOnly));
+        ui=unassT.findIndex(j=>!(getEffectiveSlot(j)==='am'&&sa.t.n>1)&&!isTanpatsu(j)&&pairDirOK(A,j)
+          &&!(_NLr(A)&&_NLr(j))&&!(j.isMT&&sa.r.drv.atOnly)
+          &&(!sa.r.truck||checkCompat(sa.r.truck,j).ok)&&pairWOK(sa.r.truck,A,j)); // ★v9.5: 適合+重量
         uLbl='単発解消・未割当から補充（手動確認推奨）';
       }
       if(ui>=0){
@@ -4041,6 +4060,47 @@ function _genPlanCore(){
       }
     });
     doSameCitySwaps(); // ★v9.3: 補充・入替後に同一市分裂が残っていないか再実行（練馬×2が別便に残る問題の解消）
+  }
+
+  // ★v9.5: 余力ドライバー補充 — 1便のみのドライバーに未割当を配車（例:橋本が都留のみで終了11時）
+  //   (a) 既存便が全て時間フリーなら、未割当のAM近場を「先にこなす便」として先頭に挿入（AM→フリーの順）
+  //   (b) 非AMの未割当を2便目として追加（最大2台・方向/距離/適合/重量ガード）
+  {
+    const _NLf=j=>j.isLo||j.isHiRoof;
+    truckRoutes.forEach(r=>{
+      if(r.trips.length!==1||!r.trips[0].jobs.length)return;
+      const truck=r.truck, drv=r.drv;
+      const okBase=j=>!isTanpatsu(j)&&!(j.isMT&&drv.atOnly)&&(!truck||checkCompat(truck,j).ok);
+      // (a) AM先行便の挿入（既存便に時間制約が無い場合のみ＝順序入替が安全）
+      if(r.trips[0].jobs.every(j=>getEffectiveSlot(j)!=='am'&&!(j.timeSlot==='time'&&j.time))){
+        const amIdx=unassT.findIndex(j=>okBase(j)&&getEffectiveSlot(j)==='am'&&estimateTravel(j)<=90);
+        if(amIdx>=0){
+          const j1=unassT.splice(amIdx,1)[0];
+          assignedT.add(j1.id);
+          const newJobs=[j1];
+          const m2=unassT.findIndex(j=>okBase(j)&&pairDirOK(j1,j)&&!(_NLf(j1)&&_NLf(j))&&pairWOK(truck,j1,j)&&(getEffectiveSlot(j)!=='am'||estimateTravel(j)<=90));
+          if(m2>=0){const j2=unassT.splice(m2,1)[0];assignedT.add(j2.id);newJobs.push(j2);}
+          r.trips.splice(0,0,{n:1,jobs:newJobs,amFront:true});
+          r.trips.forEach((tt,ii)=>tt.n=ii+1);
+          drvTrips.set(drv.id,r.trips.length);
+          warns.push({lv:'wn',msg:`🌅【AM先行便】${drv.name}：${newJobs.map(j=>`${j.vehicle}（${j.pc||j.pp}）`).join('+')} を1便目に挿入（元の便は時間フリーのため後ろへ）`});
+        }
+      }
+      // (b) 2便目確保（まだ1便のままなら非AMの未割当を追加）
+      if(r.trips.length===1){
+        const i1=unassT.findIndex(j=>okBase(j)&&getEffectiveSlot(j)!=='am');
+        if(i1>=0){
+          const j1=unassT.splice(i1,1)[0];
+          assignedT.add(j1.id);
+          const newJobs=[j1];
+          const m2=unassT.findIndex(j=>okBase(j)&&getEffectiveSlot(j)!=='am'&&pairDirOK(j1,j)&&!(_NLf(j1)&&_NLf(j))&&pairWOK(truck,j1,j));
+          if(m2>=0){const j2=unassT.splice(m2,1)[0];assignedT.add(j2.id);newJobs.push(j2);}
+          r.trips.push({n:r.trips.length+1,jobs:newJobs,fillTrip:true});
+          drvTrips.set(drv.id,r.trips.length);
+          warns.push({lv:'wn',msg:`🚛【2便目確保】${drv.name}：${newJobs.map(j=>`${j.vehicle}（${j.pc||j.pp}）`).join('+')} を追加（未割当の解消・手動確認推奨）`});
+        }
+      }
+    });
   }
 
   // ★v6.2: 統合しきれなかった1台便（単発対象外）を赤字警告で明示
@@ -4196,9 +4256,34 @@ function _genPlanCore(){
       else if(tFrom>0&&arr>tFrom-0&&tTo>0&&tTo-arr<30)
         warns.push({lv:'wn',msg:`⚠【時間指定ギリギリ】${j.vehicle}（${j.time}指定）到着${toHM(arr)}：余裕${tTo-arr}分。交通事情に注意。`});
     }
-    if(getEffectiveSlot(j)==='am'&&arr>690)
+    if(getEffectiveSlot(j)==='am'&&arr>690&&arr<=720)
       warns.push({lv:'wn',msg:`⚠【AMリスク】${j.vehicle}（${j.pc||j.pp}・AM指定）推定到着${toHM(arr)}：交通事情次第で正午に間に合わないリスクあり。`});
   })));
+  // ★v9.5: AM指定の最終強制 — 最終タイムラインで正午に間に合わないAMは自動割当のまま残さない（未割当へ戻す）
+  {
+    truckRoutes.forEach(r=>{
+      let touched=false;
+      r.trips.forEach((t,ti)=>{
+        for(let ji=t.jobs.length-1;ji>=0;ji--){
+          const j=t.jobs[ji];
+          const arr=r.daySchedule?.[ti]?.arrJ?.[ji];
+          if(getEffectiveSlot(j)==='am'&&arr!=null&&arr>720){
+            t.jobs.splice(ji,1);
+            assignedT.delete(j.id);
+            if(!unassT.includes(j))unassT.push(j);
+            touched=true;
+            warns.push({lv:'er',msg:`🔴【AM未達・割当解除】${j.vehicle}（${j.pc||j.pp}・AM指定）：${r.drv.name}${t.n}便の推定到着${toHM(arr)}で正午に間に合わないため未割当に戻しました。手動でヘルプ/自走/翌日等に回してください`});
+          }
+        }
+      });
+      if(touched){
+        r.trips=r.trips.filter(t=>t.jobs.length>0);
+        r.trips.forEach((tt,ii)=>tt.n=ii+1);
+        drvTrips.set(r.drv.id,r.trips.length);
+        r.daySchedule=calcDaySched(r.trips,r.drv,cfg);
+      }
+    });
+  }
   // ★v5.8: 時間指定待ちの長時間現地待機を警告（後の便に回す方が効率的）
   truckRoutes.forEach(r=>r.trips.forEach(t=>{
     const _wt=Math.max(t._waitJ2||0,t._waitJ1||0);
@@ -4247,10 +4332,22 @@ function _genPlanCore(){
       r.compatW=fresh; // ルートカードの表示も最終状態に更新
     }
   });
-  // ★v9.3: 自走便の時間窓チェック — 告知目安がお客様希望時間に間に合わない/AM指定が正午を超える場合に警告
+  // ★v9.3→v9.5: 自走便の時間窓/AM最終強制 — 2件目以降のAM指定・間に合わない時間指定は自動割当のまま残さない
   jisoRoutes.forEach(r=>{
     if(!r.jobs||!r.jobs.length)return;
-    const arrs=calcJisoArrivals(r.jobs,pkDur);
+    let arrs=calcJisoArrivals(r.jobs,pkDur);
+    for(let i=r.jobs.length-1;i>=1;i--){
+      const j=r.jobs[i];
+      const tTo=(j.time?parseTimeRange(j.time).tTo:0)||0;
+      if(getEffectiveSlot(j)==='am'||(tTo>0&&arrs[i]>tTo)){
+        r.jobs.splice(i,1);
+        assignedJ.delete(j.id);
+        if(!unassT.includes(j))unassT.push(j);
+        warns.push({lv:'er',msg:`🔴【自走・割当解除】${r.drv.name}${i+1}件目 ${j.vehicle}（${j.pc||j.pp}・${getEffectiveSlot(j)==='am'?'AM指定':'希望'+j.time}）：自走の2件目では時間に間に合わないため未割当に戻しました。手動で割当してください`});
+      }
+    }
+    // 残った便の窓チェック（1件目含む・警告のみ）
+    arrs=calcJisoArrivals(r.jobs,pkDur);
     r.jobs.forEach((j,i)=>{
       const arr=arrs[i];
       if(j.time){
@@ -4259,7 +4356,7 @@ function _genPlanCore(){
           warns.push({lv:'er',msg:`🔴【自走・時間NG】${r.drv.name}${i+1}便目 ${j.vehicle}（${j.pc||j.pp}・希望${j.time}）：推定到着${toHM(arr)}で間に合いません。順序変更かトラック便へ振替してください`});
       }
       if(getEffectiveSlot(j)==='am'&&arr>720)
-        warns.push({lv:'wn',msg:`⚠【自走・AMリスク】${r.drv.name}${i+1}便目 ${j.vehicle}（${j.pc||j.pp}・AM指定）：推定到着${toHM(arr)}で正午を超えます。1件目に移すか他便を検討してください`});
+        warns.push({lv:'wn',msg:`⚠【自走・AMリスク】${r.drv.name}${i+1}便目 ${j.vehicle}（${j.pc||j.pp}・AM指定）：推定到着${toHM(arr)}で正午を超えます`});
     });
   });
   renderPlan({truckRoutes,jisoRoutes,yardStf,warns,cfg,helpAssign,unassT});
