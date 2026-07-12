@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>配車管理システム｜野田ヤード v9.6</title>
+<title>配車管理システム｜野田ヤード v9.7</title>
 <style>
 :root{--p:#1a4f8b;--pl:#2563b0;--ac:#e8750a;--ok:#16a34a;--wn:#d97706;--ng:#dc2626;
 --bg:#f0f4f8;--card:#fff;--bd:#d1d9e0;--tx:#1e293b;--mu:#64748b;
@@ -166,8 +166,8 @@ tr:hover td{background:#f8fafc;}
 <header>
   <h1>🚛 配車管理システム</h1>
   <div class="dbadge" id="hdrDate"></div>
-  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v9.6</span>
-  <span style="font-size:11px;opacity:.7;">更新: 2026/07/12 v9.6</span>
+  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v9.7</span>
+  <span style="font-size:11px;opacity:.7;">更新: 2026/07/12 v9.7</span>
   <span id="syncBadge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.18);">…</span>
   <span style="display:flex;gap:6px;margin-left:auto;align-items:center;">
     <button class="btn btn-o btn-sm" onclick="setApiUrl()" title="クラウド共有のURL設定（GASのウェブアプリ exec URL）。空欄で共有オフ">⚙ 共有設定</button>
@@ -1853,7 +1853,7 @@ function checkCompat(truck,job){
   const issues=[],hints=[];
   if(job.w&&job.w>truck.maxW){issues.push(`重量超過(${job.w}t>${truck.maxW}t)`);hints.push('大容量シリーズへ変更');}
   if((job.isAcc||job.isSus)&&truck.winch!=='strong'){issues.push('ウィンチ強化必要(事故車/足折れ)→1or2シリーズ');hints.push('1or2シリーズを使用');}
-  if(job.isMv&&!truck.pillar){issues.push('大型ミニバン下段→前柱伸び必要(1シリーズのみ)');hints.push('1シリーズへ変更');}
+  if(job.isMv&&!truck.pillar&&parseInt(truck.series)!==3){issues.push('大型ミニバン下段→前柱伸び(1シリーズ)か3シリーズが必要');hints.push('1シリーズor3シリーズへ変更');} // ★v9.7: 3シリーズは前柱なしでも大型MV積載可（現場確認）
   if(job.isLb&&parseInt(truck.series)===3){issues.push('車高低い→3シリーズ不可(アオリ段差)');hints.push('1or2シリーズへ変更');}
   if(job.isLo&&!truck.longOK){issues.push('長尺車→202号車推奨');}
   return{issues,hints,ok:issues.length===0};
@@ -5268,7 +5268,7 @@ function renderPlan(plan){
       <h4>適用ルール一覧</h4>
       <div class="ri">R-2 📦 <span>2台積みは原則2台積載。単発（ハイエース/キャラバン/キャリア付/単発指定）はペアを組まない</span></div>
       <div class="ri">R-W 🔧 <span>事故車・足折れ → ウィンチ強化(1or2シリーズ) + 難易度高対応ドライバー</span></div>
-      <div class="ri">R-P 📐 <span>大型ミニバン下段 → 前柱伸び(1シリーズ)必須</span></div>
+      <div class="ri">R-P 📐 <span>大型ミニバン下段 → 前柱伸び(1シリーズ) または 3シリーズ（3シリーズは前柱なしでも積載可）</span></div>
       <div class="ri">R-L 🚗 <span>車高低い → 3シリーズ不可(アオリ段差問題)</span></div>
       <div class="ri">R-U ⬆️ <span>上段には小型車。重量1.5t超の上段配置は横転リスクで警告</span></div>
       <div class="ri">R-AM 🌅 <span>AM指定 → 1〜2便目に配置（3便目以降は警告）</span></div>
