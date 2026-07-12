@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>配車管理システム｜野田ヤード v9.8</title>
+<title>配車管理システム｜野田ヤード v9.9</title>
 <style>
 :root{--p:#1a4f8b;--pl:#2563b0;--ac:#e8750a;--ok:#16a34a;--wn:#d97706;--ng:#dc2626;
 --bg:#f0f4f8;--card:#fff;--bd:#d1d9e0;--tx:#1e293b;--mu:#64748b;
@@ -166,8 +166,8 @@ tr:hover td{background:#f8fafc;}
 <header>
   <h1>🚛 配車管理システム</h1>
   <div class="dbadge" id="hdrDate"></div>
-  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v9.8</span>
-  <span style="font-size:11px;opacity:.7;">更新: 2026/07/12 v9.8</span>
+  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v9.9</span>
+  <span style="font-size:11px;opacity:.7;">更新: 2026/07/12 v9.9</span>
   <span id="syncBadge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.18);">…</span>
   <span style="display:flex;gap:6px;margin-left:auto;align-items:center;">
     <button class="btn btn-o btn-sm" onclick="setApiUrl()" title="クラウド共有のURL設定（GASのウェブアプリ exec URL）。空欄で共有オフ">⚙ 共有設定</button>
@@ -4360,19 +4360,43 @@ function _genPlanCore(){
     // ★v9.6→v9.8: AM先行便の再試行 — 割当解除で戻ったAMを1便目に前挿入して救済
     //   v9.8: (1)PM・午後窓(13時以降開始)の便は後ろへずらしてOKに緩和 (2)大型車ドライバー優先
     //   （重いAMペア=マークII+アルファード3.5tが3シリーズに入れるように）
-    const _shiftable=j=>getEffectiveSlot(j)!=='am'&&!(j.timeSlot==='time'&&j.time&&(parseTimeRange(j.time).tFrom||0)<780);
+    // ★v9.9: 「ずらせる便」の判定緩和 — 窓の締切が15時以降(tTo≥900)ならAM便を前に挿し込んでも間に合う
+    //   （旧: 開始13時前の窓を一律除外→10:00〜20:00等の広い窓まで固定扱いになりAM先行便が発火しなかった）
+    //   ＋関数化して自走の割当解除後にも再実行（window._tryFrontloadAMに保持）
+    const _shiftable=j=>{
+      if(getEffectiveSlot(j)==='am')return false;
+      if(j.timeSlot==='time'&&j.time){
+        const{tFrom,tTo}=parseTimeRange(j.time);
+        if((tFrom||0)>=780)return true;        // 午後開始の窓は後ろにずらしてOK
+        return (tTo||0)>=900;                  // 締切15時以降の広い窓もOK（〜17時,〜20時等）
+      }
+      return true;
+    };
+    // ★v9.9: AM扱いの判定 — AM指定に加え「午前締切の時間指定」(9:00〜12:00等)も1便目優先の対象
+    const _isMorning=j=>{
+      if(getEffectiveSlot(j)==='am')return true;
+      if(j.timeSlot==='time'&&j.time){const{tTo}=parseTimeRange(j.time);return tTo>0&&tTo<=780;}
+      return false;
+    };
+    const tryFrontloadAM=()=>{
     [...truckRoutes].sort((a,b)=>((b.truck&&b.truck.maxW)||0)-((a.truck&&a.truck.maxW)||0)).forEach(r=>{
       if(r.trips.length<1||r.trips.length>2)return;
       if(!r.trips.every(t=>t.jobs.every(_shiftable)))return;
       const truck=r.truck,drv=r.drv;
       const okB=j=>!isTanpatsu(j)&&!(j.isMT&&drv.atOnly)&&(!truck||checkCompat(truck,j).ok)&&estimateTravel(j)<=90;
-      const ai=unassT.findIndex(j=>okB(j)&&getEffectiveSlot(j)==='am');
+      const ai=unassT.findIndex(j=>okB(j)&&_isMorning(j));
       if(ai<0)return;
       const j1=unassT.splice(ai,1)[0];
       assignedT.add(j1.id);
       const jobs=[j1];
       const _NL2=j=>j.isLo||j.isHiRoof;
-      const m2=unassT.findIndex(j=>okB(j)&&pairDirOK(j1,j)&&!(_NL2(j1)&&_NL2(j))&&pairWOK(truck,j1,j));
+      // ★v9.9: 相方は「方向が最も合い・距離が近い」候補を選ぶ（第一発見ではなく採点。佐倉+市川のような同方向優先）
+      let m2=-1,m2Score=1e9;
+      unassT.forEach((j,idx)=>{
+        if(!(okB(j)&&pairDirOK(j1,j)&&!(_NL2(j1)&&_NL2(j))&&pairWOK(truck,j1,j)&&(_isMorning(j)||getEffectiveSlot(j)!=='pm')))return;
+        const sc=dirDiff(getDir(j1.pp,j1.pc),getDir(j.pp,j.pc))*10+Math.abs(estimateTravel(j1)-estimateTravel(j));
+        if(sc<m2Score){m2Score=sc;m2=idx;}
+      });
       if(m2>=0){const j2=unassT.splice(m2,1)[0];assignedT.add(j2.id);jobs.push(j2);}
       r.trips.splice(0,0,{n:1,jobs,amFront:true});
       r.trips.forEach((tt,ii)=>tt.n=ii+1);
@@ -4384,7 +4408,7 @@ function _genPlanCore(){
     //   （「1便目スロットはAM指定優先。非AMは後回しにしても手動調整が楽」＝現場ルール）
     for(let ui=unassT.length-1;ui>=0;ui--){
       const A=unassT[ui];
-      if(getEffectiveSlot(A)!=='am'||isTanpatsu(A)||estimateTravel(A)>90)continue;
+      if(!_isMorning(A)||isTanpatsu(A)||estimateTravel(A)>90)continue; // ★v9.9: 午前窓の時間指定もAM扱い
       const cand=[...truckRoutes].sort((a,b)=>((b.truck&&b.truck.maxW)||0)-((a.truck&&a.truck.maxW)||0)).find(r=>{
         if(!r.trips.length||r.trips[0].jobs.length!==2)return false;
         const t1=r.trips[0];
@@ -4410,6 +4434,9 @@ function _genPlanCore(){
       cand.daySchedule=calcDaySched(cand.trips,cand.drv,cfg);
       warns.push({lv:'wn',msg:`🌅【AM優先入替】${A.vehicle}（${A.pc||A.pp}・AM指定）を${cand.drv.name}1便目へ。時間フリーの${X.vehicle}（${X.pc||X.pp}）は未割当に（後便/他Dで対応）`});
     }
+    };
+    tryFrontloadAM();
+    window.__flAM=tryFrontloadAM; // ★v9.9: 自走の割当解除後に再実行するため保持
   }
   // ★v5.8: 時間指定待ちの長時間現地待機を警告（後の便に回す方が効率的）
   truckRoutes.forEach(r=>r.trips.forEach(t=>{
@@ -4488,6 +4515,8 @@ function _genPlanCore(){
         warns.push({lv:'wn',msg:`⚠【自走・AMリスク】${r.drv.name}${i+1}便目 ${j.vehicle}（${j.pc||j.pp}・AM指定）：推定到着${toHM(arr)}で正午を超えます`});
     });
   });
+  // ★v9.9: 自走の割当解除で戻った午前案件（マークII・エスティマ等）をトラックのAM先行便で再救済
+  if(window.__flAM){window.__flAM();window.__flAM=null;}
   // ★v9.8: 相乗りの最終検証 — 分離/入替でトラックの行き先が変わった相乗りは無効化（現地相乗り＝同一市区町村のみ。
   //   トラックが相乗りのために別の場所へ寄る・高速を途中で降りるのはNG＝現場ルール）
   jisoRoutes.forEach(jr=>{
