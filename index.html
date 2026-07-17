@@ -48,6 +48,9 @@
   .memo{color:var(--warn);font-size:12px;margin-top:3px}
   .goo{display:inline-block;margin-top:4px;font-size:11px;color:#7dd3fc;text-decoration:none}
   .goo:hover{text-decoration:underline}
+  .cell-lg{font-size:14.5px;color:var(--txt);white-space:nowrap}
+  .englink{color:#7dd3fc;cursor:pointer;font-weight:600}
+  .englink:hover{text-decoration:underline}
   .negin{color:var(--muted);font-size:12px}
   tr.recent td{background:rgba(239,68,68,.06)}
   /* editor */
@@ -67,7 +70,7 @@
 </head>
 <body>
 <header>
-  <div class="title">📈 相場表アプリ <small>野田ヤード / v1.7（エンジン型式表示）</small></div>
+  <div class="title">📈 相場表アプリ <small>野田ヤード / v1.8（年式/重量/エンジン拡大・同エンジン絞込）</small></div>
   <div class="toolbar">
     <input id="q" class="search" placeholder="車種・型式で検索（例: アルファード MNH15 / セレナ C26）">
     <div class="awtoggle" id="awToggle">
@@ -502,15 +505,16 @@ function render(){
       <td>${priceCell(r.aw, awMode===1, docOff)}${(/書/.test(r.n)&&!docOff&&!String(r.aw).includes('書'))?' <span class="badge doc" title="車検書類付（車名に書付き表記）">書</span>':''}</td>
       <td>${priceCell(r.l, awMode===0, docOff)}</td>
       <td>${negin}</td>
-      <td class="dim" style="font-size:12px;white-space:nowrap">${r.y?(r.y+'<br><span style="opacity:.75">'+toWareki(r.y)+'</span>'):'—'}</td>
-      <td class="dim" style="font-size:12px;white-space:nowrap">${wt?wt+'<small style="color:var(--muted)">kg</small>':'—'}</td>
-      <td class="dim" style="font-size:12px;white-space:nowrap">${lookupEngine(r.n)||'—'}</td>
+      <td class="cell-lg">${r.y?(r.y+'<br><span style="opacity:.8">'+toWareki(r.y)+'</span>'):'<span class="dim">—</span>'}</td>
+      <td class="cell-lg">${wt?wt+'<small style="color:var(--muted)">kg</small>':'<span class="dim">—</span>'}</td>
+      <td class="cell-lg">${(function(){const e=lookupEngine(r.n);return e?('<span class="englink" data-eng="'+e+'" title="同じエンジンの車種を表示">'+e+'</span>'):'<span class="dim">—</span>';})()}</td>
       <td class="dim" style="font-size:12px">${r.d||'—'}</td>
     </tr>`;
   }).join("");
   document.getElementById("empty").classList.toggle("hidden", list.length>0);
   document.querySelectorAll("tr.row").forEach(tr=>tr.onclick=()=>openEditor(tr.dataset.id));
   document.querySelectorAll(".taxlink").forEach(a=>a.onclick=(e)=>{ e.stopPropagation(); openTaxCalc(a.dataset.wt, a.dataset.name, a.dataset.maker); });
+  document.querySelectorAll(".englink").forEach(a=>a.onclick=(e)=>{ e.stopPropagation(); document.getElementById("q").value=a.dataset.eng; render(); window.scrollTo(0,0); });
 }
 
 // maker chips
