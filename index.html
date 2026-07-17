@@ -67,7 +67,7 @@
 </head>
 <body>
 <header>
-  <div class="title">📈 相場表アプリ <small>野田ヤード / v1.6（車検満了の初期値=今の年月）</small></div>
+  <div class="title">📈 相場表アプリ <small>野田ヤード / v1.7（エンジン型式表示）</small></div>
   <div class="toolbar">
     <input id="q" class="search" placeholder="車種・型式で検索（例: アルファード MNH15 / セレナ C26）">
     <div class="awtoggle" id="awToggle">
@@ -93,7 +93,7 @@
   <table>
     <thead><tr>
       <th>車種・型式</th>
-      <th>AW</th><th>レス</th><th>ネギン</th><th>年式</th><th>車両重量</th><th>更新日</th>
+      <th>AW</th><th>レス</th><th>ネギン</th><th>年式</th><th>車両重量</th><th>エンジン</th><th>更新日</th>
     </tr></thead>
     <tbody id="rows"></tbody>
   </table>
@@ -312,6 +312,67 @@ const WEIGHTMAP = {
 const WEIGHTKEYS = Object.keys(WEIGHTMAP).sort((a,b)=>b.length-a.length);
 function lookupWeight(name){ for(const k of WEIGHTKEYS){ if(name.indexOf(k)>=0) return WEIGHTMAP[k]; } return ""; }
 
+/* エンジン型式（車両型式→搭載エンジン。長いキー優先。辞書に無い車種は🔎で確認） */
+const ENGINEMAP = {
+// トヨタ
+"bB QNC20":"K3-VE","bB QNC21":"3SZ-VE","bB NCP30":"2NZ-FE","bB NCP31":"1NZ-FE","ZZE127":"1ZZ-FE",
+"ZNM10":"1ZZ-FE","ZGM10":"2ZR-FAE","ZGM11":"3ZR-FAE","ANM10":"1AZ-FSE",
+"アクア":"1NZ-FXE","ATH10":"2AZ-FXE","ATH20":"2AZ-FXE","ANH10":"2AZ-FE","ANH20":"2AZ-FE",
+"MNH10":"1MZ-FE","MNH15":"1MZ-FE","GGH20":"2GR-FE","GGH25":"2GR-FE",
+"ZNE10":"1ZZ-FE","ZGE20":"2ZR-FAE","ANE10":"1AZ-FSE","ウイッシュ 2000CC DBA":"3ZR-FAE",
+"KSP90":"1KR-FE","KSP130":"1KR-FE","ヴィッツ NCP10":"2NZ-FE","SCP10":"1SZ-FE","SCP13":"2SZ-FE","SCP90":"2SZ-FE","NSP130":"1NR-FE",
+"MCR30":"1MZ-FE","MCR40":"1MZ-FE","ACR30":"2AZ-FE","ACR40":"2AZ-FE","ACR50":"2AZ-FE","ACR55":"2AZ-FE","GSR5":"2GR-FE","AHR20":"2AZ-FXE",
+"ZRE154":"2ZR-FE","オーリス":"1ZZ-FE/2ZR","カローラルミオン":"2ZR-FE","カローラスパシオ":"1ZZ-FE","AZT241":"1AZ-FSE",
+"クラウンコンフォート 3Y":"3Y-PE","クラウンコンフォート 1TR":"1TR-FPE","GRS180":"4GR-FSE","GRS182":"3GR-FSE","GRS200":"4GR-FSE","GRS202":"3GR-FSE","UZS186":"3UZ-FE",
+"NCP81":"1NZ-FE","NCP141":"1NZ-FE","NSP140":"1NR-FE","NCP140":"1NZ-FE","サクシード":"1NZ-FE","セルシオ":"3UZ-FE",
+"ノア/ヴォクシー60":"1AZ-FSE","ヴォクシー70":"3ZR-FE","ノア 70":"3ZR-FE",
+"パッソKGC10":"1KR-FE","KGC30":"1KR-FE","パッソ QNC10":"K3-VE","パッソセッテ":"3SZ-VE",
+"プロボックス":"1NZ-FE","NCP20":"2NZ-FE","AZE156":"2AZ-FE","AZE154":"2AZ-FE","NCP12":"1NZ-FE",
+"ポルテNNP10":"2NZ-FE","NNP11":"1NZ-FE","WILL NCP19":"2NZ-FE","NCP70":"2NZ-FE",
+"GX110":"1G-FE","GRX120":"4GR-FSE","GRX121":"3GR-FSE","GRX130":"4GR-FSE","マークXジオ":"2AZ-FE",
+"NCP100":"1NZ-FE","NCP120":"1NZ-FE","SCP100":"2SZ-FE","NSP120":"1NR-FE",
+"NCZ20":"1NZ-FE","プリウス 20":"1NZ-FXE","プリウス 30":"2ZR-FXE","ブレイド":"2AZ-FE","イスト":"1NZ-FE",
+// レクサス
+"LS600":"2UR-FSE","LS460":"1UR-FSE","IS250":"4GR-FSE","GS350":"2GR-FSE",
+// 日産
+"AD 1600":"HR16DE","AD 1500":"HR15DE","AD 1200":"CR12DE","ウイングロード":"HR15DE",
+"NT30":"QR20DE","NT31":"MR20DE","TE52":"QR25DE","PE52":"VQ35DE","エルグランド 51":"VQ25DE","エルグランド 17-18":"VQ25DE","ALWE50":"VG33E",
+"MY34":"VQ25DD","サニー":"QG15DE","V35":"VQ25DD","V36":"VQ25HR","ステージア":"VQ25DD","ジューク":"HR15DE","GF50":"VK45DD",
+"セレナ C25":"MR20DE","セレナ CC25":"MR20DE","C26":"MR20DD","TC24":"QR20DE","セドリック":"NA20P",
+"ティアナ J31":"VQ23DE","J32":"VQ25DE","ティアナ L33":"QR25DE",
+"E11":"HR15DE","E12":"HR12DE","ティーダ C11":"HR15DE","ティーダ JC11":"MR18DE",
+"YZ11":"HR15DE","BZ11":"CR14DE","キューブ Z12":"HR15DE",
+"AK12":"CR12DE","YK12":"HR15DE","マーチ K13":"HR12DE","マーチ 18年":"CR12DE","NV200":"HR16DE",
+"シルフィ KG11":"MR20DE","シルフィ G11":"HR15DE","ブルーバードシルフィ":"HR15DE","TB17":"MRA8DE",
+"プレサージュ":"QR25DE","フーガ Y50":"VQ25DE","PNY50":"VQ35DE","ラフェスタ":"MR20DE","リーフ":"EM57(モーター)","ムラーノ":"QR25DE","デュアリス":"MR20DE","クリッパー":"3G83",
+// ホンダ
+"CL7":"K20A","CU1":"R20A","ZE2":"LDA","RT3":"R20A","エディックス(BE1)":"D17A","エディックス(BE3)":"K20A","エディックス(BE8)":"K24A",
+"RR1":"K24A","RR3":"J30A","RR5":"J35A","エアウェイブ":"L15A",
+"RB1":"K24A","RB2":"K24A","RB3":"K24A","RC1":"K24W",
+"RK1":"R20A","RK5":"R20A","RG1":"K20A","RG3":"K24A","RF7":"K24A","RF1":"B20B","RF2":"B20B",
+"RN1":"D17A","RN6":"R18A","RN8":"R20A",
+"GD1":"L13A","GD2":"L13A","GE6":"L13A","GE7":"L15A","GP1":"LDA","GP5":"LEB","GP2":"LDA","フリードHV GP3":"LEA","GB3":"L15A","モビリオ":"L15A",
+// マツダ
+"LY3P":"L3-VE","LW3W":"L3-DE","GJ2FW":"SH-VPTR","GH5FW":"L5-VE","アテンザセダン":"LF-VE",
+"DE3FS":"ZJ-VE","DJ3FS":"P3-VPS","ビアンテ":"LF-VDS","プレマシー":"LF-VD","CX-5":"SH-VPTS","ベリーサ":"ZY-VE","キャロル":"K6A",
+// 三菱
+"CV5W":"4B12","CV4W":"4B11","MB15S":"K12B","RVR":"4B10","アウトランダー":"4B12",
+// スバル
+"GG2":"EJ15","GP3":"FB16","エクシーガ":"EJ20","SH5":"EJ20","プレオ":"EN07",
+"レガシィTW ターボ BR":"EJ25","BP5":"EJ20","レガシィTW ターボ BM":"EJ25","BL5":"EJ20",
+// スズキ
+"アルト 24":"K6A","アルト 25":"K6A","HA25":"K6A","アルトエコ 35S":"R06A","アルト 36S":"R06A",
+"DA52V":"F6A","DA64V":"K6A","DA62V":"K6A","DA17V":"R06A","64V":"K6A","64W":"K6A",
+"DA63T":"K6A","DA16T":"R06A","DB52T":"F6A","DA62T":"K6A","キャリイT":"K6A",
+"ZC11S":"M13A","ZD11S":"M13A","スイフト 72":"K12B","スイフト 71":"K12B","ソリオ":"K12B",
+// ダイハツ
+"ミライース":"KF","アトレー":"EF-DET","ハイゼット 321":"KF","ハイゼット 331":"KF","ハイゼット 320":"EF-VE","ハイゼットT 210P":"EF-SE","ハイゼットカーゴ":"KF/EF",
+// 追加
+"アベンシス":"1AZ/3ZR","クラウンマジェスタ":"1UZ/3UZ","バネット":"F8"
+};
+const ENGINEKEYS = Object.keys(ENGINEMAP).sort((a,b)=>b.length-a.length);
+function lookupEngine(name){ for(const k of ENGINEKEYS){ if(name.indexOf(k)>=0) return ENGINEMAP[k]; } return ""; }
+
 /* ===== 双方向同期（Google スプレッドシート / Apps Script） ===== */
 const API_KEY="soba_api", CACHE_KEY="soba_v01_cache";
 const DEFAULT_API="https://script.google.com/macros/s/AKfycbzqjqZi07taoyE-vqtaJ--GX0C6q3g0Q6adw_xkmvyTzAmuOk-wQehAGeHKxc2q-DL_rA/exec";
@@ -414,7 +475,7 @@ function render(){
   const tb = document.getElementById("rows");
   let list = DATA.filter(r=>{
     if(makerFilter && r.m!==makerFilter) return false;
-    if(q){ const hay=(r.m+" "+r.n+" "+(r.memo||"")).toLowerCase(); if(!hay.includes(q)) return false; }
+    if(q){ const hay=(r.m+" "+r.n+" "+(r.memo||"")+" "+lookupEngine(r.n)).toLowerCase(); if(!hay.includes(q)) return false; }
     return true;
   });
   // sort: maker order, then name
@@ -443,6 +504,7 @@ function render(){
       <td>${negin}</td>
       <td class="dim" style="font-size:12px;white-space:nowrap">${r.y?(r.y+'<br><span style="opacity:.75">'+toWareki(r.y)+'</span>'):'—'}</td>
       <td class="dim" style="font-size:12px;white-space:nowrap">${wt?wt+'<small style="color:var(--muted)">kg</small>':'—'}</td>
+      <td class="dim" style="font-size:12px;white-space:nowrap">${lookupEngine(r.n)||'—'}</td>
       <td class="dim" style="font-size:12px">${r.d||'—'}</td>
     </tr>`;
   }).join("");
