@@ -70,9 +70,10 @@
 </head>
 <body>
 <header>
-  <div class="title">📈 相場表アプリ <small>野田ヤード / v1.8（年式/重量/エンジン拡大・同エンジン絞込）</small></div>
+  <div class="title">📈 相場表アプリ <small>野田ヤード / v1.9（自動車税還付・音声検索）</small></div>
   <div class="toolbar">
     <input id="q" class="search" placeholder="車種・型式で検索（例: アルファード MNH15 / セレナ C26）">
+    <button class="btn" id="micBtn" title="音声で車種検索">🎤</button>
     <div class="awtoggle" id="awToggle">
       <button data-aw="1" class="on">アルミ有(AW)</button>
       <button data-aw="0">アルミ無(レス)</button>
@@ -168,7 +169,24 @@
         </select></div>
       <div class="field"><label>手続き調整（月）<span class="dim">／1か月半=−1</span></label><input id="txLag" type="number" value="1"></div>
     </div>
-    <div class="field"><label>自賠責 月額（円）<span class="dim">／既定500</span></label><input id="txJibai" type="number" value="500" style="width:130px"></div>
+    <div class="grid2">
+      <div class="field"><label>自賠責 月額（円）<span class="dim">／既定500</span></label><input id="txJibai" type="number" value="500"></div>
+      <div class="field"><label>排気量（自動車税）</label>
+        <select id="txCC">
+          <option value="">— 選択 —</option>
+          <option value="kei">軽自動車（還付なし）</option>
+          <option value="1000">1,000cc以下</option>
+          <option value="1500">1,001〜1,500cc</option>
+          <option value="2000">1,501〜2,000cc</option>
+          <option value="2500">2,001〜2,500cc</option>
+          <option value="3000">2,501〜3,000cc</option>
+          <option value="3500">3,001〜3,500cc</option>
+          <option value="4000">3,501〜4,000cc</option>
+          <option value="4500">4,001〜4,500cc</option>
+          <option value="6000">4,501〜6,000cc</option>
+          <option value="9999">6,000cc超</option>
+        </select></div>
+    </div>
     <div id="taxResult" style="background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:14px;line-height:1.9"></div>
     <div class="sheet-actions" style="margin-top:12px"><span></span>
       <button class="btn primary" id="taxClose">閉じる</button></div>
@@ -635,15 +653,40 @@ function parseCSV(text){
 }
 
 /* ===== 重量税 還付計算 ===== */
-// 月額重量税(円)。区分×車齢。自重計算タブの表に準拠（官公庁の月割額）
+// 月額重量税(円)＝2年(24か月)税額÷24。自重・自税一覧の24か月額と官公庁税額に一致
 const TAXM = {
-  "軽":      {u13:275, o13:350, o18:367, eco:208},
-  "1.0t以下":{u13:680, o13:950, o18:1050,eco:417},
-  "1.5t以下":{u13:1000,o13:1400,o18:1500,eco:600},
-  "2.0t以下":{u13:1360,o13:1900,o18:2100,eco:830},
-  "2.5t以下":{u13:1700,o13:2400,o18:2600,eco:1040},
-  "3.0t以下":{u13:2050,o13:2850,o18:3150,eco:1250}
+  "軽":      {u13:275, o13:342, o18:367, eco:208},   // 6,600/8,200/8,800/5,000
+  "1.0t以下":{u13:683, o13:950, o18:1050,eco:417},   // 16,400/22,800/25,200/10,000
+  "1.5t以下":{u13:1025,o13:1425,o18:1575,eco:625},   // 24,600/34,200/37,800/15,000
+  "2.0t以下":{u13:1367,o13:1900,o18:2100,eco:833},   // 32,800/45,600/50,400/20,000
+  "2.5t以下":{u13:1708,o13:2375,o18:2625,eco:1042},  // 41,000/57,000/63,000/25,000
+  "3.0t以下":{u13:2050,o13:2850,o18:3150,eco:1250}   // 49,200/68,400/75,600/30,000
 };
+// 自動車税(種別割) 年税額。上段=13年未満(旧税率)/下段=13年超重課(+15%,100円未満切捨) ※自重・自税一覧と一致
+const JIZEI = [
+  {max:1000, std:29500, juka:33900},
+  {max:1500, std:34500, juka:39600},
+  {max:2000, std:39500, juka:45400},
+  {max:2500, std:45000, juka:51700},
+  {max:3000, std:51000, juka:58600},
+  {max:3500, std:58000, juka:66700},
+  {max:4000, std:66500, juka:76400},
+  {max:4500, std:76500, juka:87900},
+  {max:6000, std:88000, juka:101200},
+  {max:99999,std:111000,juka:127600}
+];
+// エンジン型式→排気量cc（自動車税の区分判定用）
+const ENGINE_CC = {"K3":1300,"3SZ":1500,"2NZ":1300,"1NZ":1500,"1ZZ":1800,"2ZR":1800,"3ZR":2000,"1AZ":2000,"2AZ":2400,"1MZ":3000,"2GR":3500,"1KR":1000,"2SZ":1300,"1SZ":1000,"1NR":1300,"4GR":2500,"3GR":3000,"2UR":5000,"1UR":4600,"3UZ":4300,"1UZ":4000,"1G-":2000,"1TR":2000,"3Y-":2000,"HR15":1500,"HR16":1600,"HR12":1200,"CR12":1200,"CR14":1400,"QR20":2000,"QR25":2500,"MR20":2000,"MR18":1800,"VQ23":2300,"VQ25":2500,"VQ35":3500,"VK45":4500,"VG33":3300,"QG15":1500,"MRA8":1800,"NA20":2000,"K20A":2000,"K24":2400,"R20A":2000,"R18A":1800,"L13A":1300,"L15A":1500,"LDA":1300,"LEB":1500,"LEA":1500,"D17A":1700,"J30A":3000,"J35A":3500,"B20B":2000,"L3":2300,"L5":2500,"LF":2000,"ZJ":1300,"ZY":1500,"P3":1300,"SH-":2200,"4B12":2400,"4B11":2000,"4B10":1800,"K12B":1200,"M13A":1300,"EJ15":1500,"EJ20":2000,"EJ25":2500,"FB16":1600,"EM57":1000,"F8":1800};
+function lookupCC(name){
+  // 1) 車名に明示の排気量（1300 / 2400 / 2000CC 等）
+  const m=String(name||"").match(/(?:^|[^A-Za-z0-9０-９])([1-9]\d{2,3})(?:cc|CC|㏄)?(?![0-9A-Za-z])/);
+  if(m){ const v=parseInt(m[1],10); if(v>=550&&v<=6500) return v; }
+  // 2) エンジン型式から
+  const eng=lookupEngine(name);
+  if(eng){ for(const k in ENGINE_CC){ if(eng.indexOf(k)===0||eng.indexOf(k)>=0) return ENGINE_CC[k]; } }
+  return 0;
+}
+function jizeiBracket(cc){ for(const b of JIZEI){ if(cc<=b.max) return b; } return JIZEI[JIZEI.length-1]; }
 function bracketByKg(kg){
   if(!kg) return "";
   if(kg<=1000) return "1.0t以下";
@@ -682,14 +725,29 @@ function recalcTax(){
   } else {
     monthsLine='還付対象月数：<span class="dim">車検満了（令和 年・月）を入力してください</span>';
   }
+  // 自動車税（種別割）: 抹消月=今月として翌月〜3月の月割。3月=還付なし。軽=対象外
+  const ccSel=document.getElementById("txCC").value;
+  const _n2=new Date(); const _y=_n2.getFullYear(), _m=_n2.getMonth()+1;
+  const jzMonths=Math.max(0,((_m>=4?_y+1:_y)*12+3)-(_y*12+_m));
+  let jzRefund=null, jzLine="";
+  if(ccSel==="kei"){ jzLine=`自動車税 還付：<b>¥0</b> <span class="dim">（軽自動車は還付対象外）</span><br>`; jzRefund=0; }
+  else if(ccSel!==""){
+    const b=jizeiBracket(parseInt(ccSel,10));
+    const annual=(age==="o13"||age==="o18")?b.juka:b.std;
+    jzRefund=Math.floor(annual*jzMonths/12/100)*100;
+    jzLine=`自動車税 還付：<b>${yen(jzRefund)}</b> <span class="dim">(年税額${yen(annual)}×${jzMonths}/12、今月抹消→${_m===3?'3月は還付なし':'翌月〜3月分'})</span><br>`;
+  }
   let refundLine="";
   if(months!=null){
     const jrate=parseInt(document.getElementById("txJibai").value,10)||0;
-    const wtax=monthly*months, jibai=jrate*months, total=wtax+jibai;
+    const wtax=monthly*months, jibai=jrate*months, total=wtax+jibai+(jzRefund||0);
     refundLine=`<div style="margin-top:8px;border-top:1px dashed var(--line);padding-top:8px">`+
       `重量税 還付：<b>${yen(wtax)}</b> <span class="dim">(${yen(monthly)}×${months})</span><br>`+
-      `自賠責 還付：<b>${yen(jibai)}</b> <span class="dim">(${yen(jrate)}×${months})</span>`+
+      `自賠責 還付：<b>${yen(jibai)}</b> <span class="dim">(${yen(jrate)}×${months})</span><br>`+
+      jzLine+
       `<div style="margin-top:6px;font-size:17px">合計 還付見込：<b style="color:var(--accent2)">${yen(total)}</b></div></div>`;
+  } else if(jzLine){
+    refundLine=`<div style="margin-top:8px;border-top:1px dashed var(--line);padding-top:8px">${jzLine}</div>`;
   }
   box.innerHTML=
     `区分：<b>${br}</b>（${ {u13:"13年未満",o13:"13年経過",o18:"18年経過",eco:"エコカー"}[age] }）<br>`+
@@ -701,6 +759,9 @@ function openTaxCalc(weightStr, name, maker){
   const kg=m?parseInt(m[0],10):0;
   document.getElementById("txBracket").value = isKei(maker,name) ? "軽" : bracketByKg(kg);
   document.getElementById("txAge").value = isEco(name) ? "eco" : "u13";
+  // 排気量の自動セット（軽→還付なし、それ以外は車名/エンジンから）
+  if(isKei(maker,name)){ document.getElementById("txCC").value="kei"; }
+  else { const cc=lookupCC(name); document.getElementById("txCC").value = cc? String(jizeiBracket(cc).max) : ""; }
   document.getElementById("txLag").value="1";
   document.getElementById("txJibai").value="500";
   const _now=new Date();
@@ -710,12 +771,34 @@ function openTaxCalc(weightStr, name, maker){
   recalcTax();
   document.getElementById("taxOverlay").classList.add("open");
 }
-["txBracket","txRY","txRM","txAge","txLag","txJibai"].forEach(id=>{
+["txBracket","txRY","txRM","txAge","txLag","txJibai","txCC"].forEach(id=>{
   const el=document.getElementById(id); el.addEventListener("input",recalcTax); el.addEventListener("change",recalcTax);
 });
 document.getElementById("taxBtn").onclick=()=>openTaxCalc("","");
 document.getElementById("taxClose").onclick=()=>document.getElementById("taxOverlay").classList.remove("open");
 document.getElementById("taxOverlay").onclick=(e)=>{ if(e.target.id==="taxOverlay") document.getElementById("taxOverlay").classList.remove("open"); };
+
+/* ===== 🎤 音声検索（Web Speech API・日本語） ===== */
+(function(){
+  const btn=document.getElementById("micBtn");
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){ btn.onclick=()=>alert("このブラウザは音声入力に未対応です。\nPC/AndroidのChrome、iPhoneはSafari最新版でお試しください。"); return; }
+  let rec=null, listening=false;
+  btn.onclick=()=>{
+    if(listening){ try{rec.stop();}catch(_){} return; }
+    rec=new SR();
+    rec.lang="ja-JP"; rec.interimResults=true; rec.continuous=false;
+    listening=true; btn.textContent="🔴"; btn.title="録音中…タップで停止";
+    rec.onresult=(e)=>{
+      let t=""; for(const res of e.results){ t+=res[0].transcript; }
+      t=t.replace(/\s+/g,"").trim();
+      document.getElementById("q").value=t; render();
+    };
+    rec.onerror=()=>{ listening=false; btn.textContent="🎤"; };
+    rec.onend=()=>{ listening=false; btn.textContent="🎤"; btn.title="音声で車種検索"; };
+    rec.start();
+  };
+})();
 
 document.getElementById("syncBtn").onclick=syncPull;
 document.getElementById("cfgBtn").onclick=configSync;
