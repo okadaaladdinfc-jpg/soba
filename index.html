@@ -70,7 +70,7 @@
 </head>
 <body>
 <header>
-  <div class="title">📈 相場表アプリ <small>野田ヤード / v1.9（自動車税還付・音声検索）</small></div>
+  <div class="title">📈 相場表アプリ <small>野田ヤード / v2.0（エンジン欄に排気量表示）</small></div>
   <div class="toolbar">
     <input id="q" class="search" placeholder="車種・型式で検索（例: アルファード MNH15 / セレナ C26）">
     <button class="btn" id="micBtn" title="音声で車種検索">🎤</button>
@@ -525,7 +525,9 @@ function render(){
       <td>${negin}</td>
       <td class="cell-lg">${r.y?(r.y+'<br><span style="opacity:.8">'+toWareki(r.y)+'</span>'):'<span class="dim">—</span>'}</td>
       <td class="cell-lg">${wt?wt+'<small style="color:var(--muted)">kg</small>':'<span class="dim">—</span>'}</td>
-      <td class="cell-lg">${(function(){const e=lookupEngine(r.n);return e?('<span class="englink" data-eng="'+e+'" title="同じエンジンの車種を表示">'+e+'</span>'):'<span class="dim">—</span>';})()}</td>
+      <td class="cell-lg">${(function(){const e=lookupEngine(r.n);const cc=lookupCC(r.n);
+        const eh=e?('<span class="englink" data-eng="'+e+'" title="同じエンジンの車種を表示">'+e+'</span>'):'<span class="dim">—</span>';
+        return eh+(cc?('<br><span style="opacity:.8">'+cc.toLocaleString()+'cc</span>'):'');})()}</td>
       <td class="dim" style="font-size:12px">${r.d||'—'}</td>
     </tr>`;
   }).join("");
@@ -676,7 +678,8 @@ const JIZEI = [
   {max:99999,std:111000,juka:127600}
 ];
 // エンジン型式→排気量cc（自動車税の区分判定用）
-const ENGINE_CC = {"K3":1300,"3SZ":1500,"2NZ":1300,"1NZ":1500,"1ZZ":1800,"2ZR":1800,"3ZR":2000,"1AZ":2000,"2AZ":2400,"1MZ":3000,"2GR":3500,"1KR":1000,"2SZ":1300,"1SZ":1000,"1NR":1300,"4GR":2500,"3GR":3000,"2UR":5000,"1UR":4600,"3UZ":4300,"1UZ":4000,"1G-":2000,"1TR":2000,"3Y-":2000,"HR15":1500,"HR16":1600,"HR12":1200,"CR12":1200,"CR14":1400,"QR20":2000,"QR25":2500,"MR20":2000,"MR18":1800,"VQ23":2300,"VQ25":2500,"VQ35":3500,"VK45":4500,"VG33":3300,"QG15":1500,"MRA8":1800,"NA20":2000,"K20A":2000,"K24":2400,"R20A":2000,"R18A":1800,"L13A":1300,"L15A":1500,"LDA":1300,"LEB":1500,"LEA":1500,"D17A":1700,"J30A":3000,"J35A":3500,"B20B":2000,"L3":2300,"L5":2500,"LF":2000,"ZJ":1300,"ZY":1500,"P3":1300,"SH-":2200,"4B12":2400,"4B11":2000,"4B10":1800,"K12B":1200,"M13A":1300,"EJ15":1500,"EJ20":2000,"EJ25":2500,"FB16":1600,"EM57":1000,"F8":1800};
+const ENGINE_CC = {"K3":1300,"3SZ":1500,"2NZ":1300,"1NZ":1500,"1ZZ":1800,"2ZR":1800,"3ZR":2000,"1AZ":2000,"2AZ":2400,"1MZ":3000,"2GR":3500,"1KR":1000,"2SZ":1300,"1SZ":1000,"1NR":1300,"4GR":2500,"3GR":3000,"2UR":5000,"1UR":4600,"3UZ":4300,"1UZ":4000,"1G-":2000,"1TR":2000,"3Y-":2000,"HR15":1500,"HR16":1600,"HR12":1200,"CR12":1200,"CR14":1400,"QR20":2000,"QR25":2500,"MR20":2000,"MR18":1800,"VQ23":2300,"VQ25":2500,"VQ35":3500,"VK45":4500,"VG33":3300,"QG15":1500,"MRA8":1800,"NA20":2000,"K20A":2000,"K24":2400,"R20A":2000,"R18A":1800,"L13A":1300,"L15A":1500,"LDA":1300,"LEB":1500,"LEA":1500,"D17A":1700,"J30A":3000,"J35A":3500,"B20B":2000,"L3":2300,"L5":2500,"LF":2000,"ZJ":1300,"ZY":1500,"P3":1300,"SH-":2200,"4B12":2400,"4B11":2000,"4B10":1800,"K12B":1200,"M13A":1300,"EJ15":1500,"EJ20":2000,"EJ25":2500,"FB16":1600,"EM57":1000,"F8":1800,
+"K6A":660,"F6A":660,"R06A":660,"KF":660,"EF":660,"3G83":660,"EN07":660};
 function lookupCC(name){
   // 1) 車名に明示の排気量（1300 / 2400 / 2000CC 等）
   const m=String(name||"").match(/(?:^|[^A-Za-z0-9０-９])([1-9]\d{2,3})(?:cc|CC|㏄)?(?![0-9A-Za-z])/);
