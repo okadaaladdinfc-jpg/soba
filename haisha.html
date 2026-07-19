@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>配車管理システム｜野田ヤード v10.0</title>
+<title>配車管理システム｜野田ヤード v10.1</title>
 <style>
 :root{--p:#1a4f8b;--pl:#2563b0;--ac:#e8750a;--ok:#16a34a;--wn:#d97706;--ng:#dc2626;
 --bg:#f0f4f8;--card:#fff;--bd:#d1d9e0;--tx:#1e293b;--mu:#64748b;
@@ -166,8 +166,8 @@ tr:hover td{background:#f8fafc;}
 <header>
   <h1>🚛 配車管理システム</h1>
   <div class="dbadge" id="hdrDate"></div>
-  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v10.0</span>
-  <span style="font-size:11px;opacity:.7;">更新: 2026/07/12 v10.0</span>
+  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v10.1</span>
+  <span style="font-size:11px;opacity:.7;">更新: 2026/07/13 v10.1</span>
   <span id="syncBadge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.18);">…</span>
   <span style="display:flex;gap:6px;margin-left:auto;align-items:center;">
     <button class="btn btn-o btn-sm" onclick="setApiUrl()" title="クラウド共有のURL設定（GASのウェブアプリ exec URL）。空欄で共有オフ">⚙ 共有設定</button>
@@ -4526,6 +4526,28 @@ function _genPlanCore(){
   {
     const _NLp=j=>j.isLo||j.isHiRoof;
     const _mrn=j=>{if(getEffectiveSlot(j)==='am')return true;if(j.timeSlot==='time'&&j.time){const{tTo}=parseTimeRange(j.time);return tTo>0&&tTo<=780;}return false;};
+    // ★v10.1: 統合を「追加→仮スケジュール→ルート全便の時間窓/AM検証→合格で確定・不合格は巻き戻し」方式に
+    //   (Codex指摘: 統合後の到着再検証なし＋(1)でdaySchedule未再計算 → 両方をここで解消)
+    const tryAddValidated=(route,trip,job)=>{
+      const oldSched=route.daySchedule;
+      trip.jobs.push(job);
+      const ns=calcDaySched(route.trips,route.drv,cfg);
+      let ok=true;
+      route.trips.forEach((t2,ti)=>t2.jobs.forEach((j2,ji)=>{
+        if(!ok)return;
+        const arr=ns?.[ti]?.arrJ?.[ji];
+        if(arr==null)return;
+        if(getEffectiveSlot(j2)==='am'&&arr>720)ok=false;
+        else if(j2.timeSlot==='time'&&j2.time){
+          const{tTo}=parseTimeRange(j2.time);
+          if(tTo>0&&arr>tTo)ok=false;
+        }
+      }));
+      if(ok){route.daySchedule=ns;return true;}
+      trip.jobs.pop();
+      route.daySchedule=oldSched;
+      return false;
+    };
     for(let iter=0;iter<10;iter++){
       const singles=[];
       truckRoutes.forEach(r=>r.trips.forEach(t=>{if(t.jobs.length===1&&!isTanpatsu(t.jobs[0]))singles.push({r,t});}));
@@ -4537,27 +4559,35 @@ function _genPlanCore(){
         const fitS=j=>!isTanpatsu(j)&&pairDirOK(F,j)&&!(_NLp(F)&&_NLp(j))&&!(j.isMT&&s.r.drv.atOnly)
           &&(!s.r.truck||checkCompat(s.r.truck,j).ok)&&pairWOK(s.r.truck,F,j)
           &&!(_mrn(j)&&s.t.n>1); // 午前系はこの便が1便目の時のみ
-        // (1) 未割当から補充
-        let ui=-1,uScore=1e9;
-        unassT.forEach((j,idx)=>{if(!fitS(j))return;const sc=dirDiff(getDir(F.pp,F.pc),getDir(j.pp,j.pc))*10+Math.abs(estimateTravel(F)-estimateTravel(j));if(sc<uScore){uScore=sc;ui=idx;}});
-        if(ui>=0){
-          const B=unassT.splice(ui,1)[0];
-          assignedT.add(B.id);s.t.jobs.push(B);did=true;
-          warns.push({lv:'wn',msg:`📦【2台積み統合】${s.r.drv.name}${s.t.n}便：${F.vehicle}（${F.pc||F.pp}）に未割当の${B.vehicle}（${B.pc||B.pp}）を積み合わせ（2台積みが原則）`});
-          break;
+        // (1) 未割当から補充（採点順に試し、時間検証に合格した最初の候補を採用）
+        const cands=[];
+        unassT.forEach((j,idx)=>{if(!fitS(j))return;cands.push({idx,sc:dirDiff(getDir(F.pp,F.pc),getDir(j.pp,j.pc))*10+Math.abs(estimateTravel(F)-estimateTravel(j))});});
+        cands.sort((a,b)=>a.sc-b.sc);
+        let placed=false;
+        for(const c of cands){
+          const B=unassT[c.idx];
+          if(tryAddValidated(s.r,s.t,B)){
+            unassT.splice(c.idx,1);
+            assignedT.add(B.id);did=true;placed=true;
+            warns.push({lv:'wn',msg:`📦【2台積み統合】${s.r.drv.name}${s.t.n}便：${F.vehicle}（${F.pc||F.pp}）に未割当の${B.vehicle}（${B.pc||B.pp}）を積み合わせ（2台積みが原則・時間検証済）`});
+            break;
+          }
         }
-        // (2) 他の1台便と統合（もらう側=この便。午前系が絡む場合は1便目側に集約）
-        const s2=singles.find(x=>x!==s&&x.t.jobs.length===1&&fitS(x.t.jobs[0])&&!(_mrn(F)&&s.t.n>1));
-        if(s2){
+        if(placed)break;
+        // (2) 他の1台便と統合（もらう側=この便。時間検証に合格した相手のみ。合格したら渡し側の便を除去）
+        for(const s2 of singles){
+          if(s2===s||s2.t.jobs.length!==1)continue;
           const B=s2.t.jobs[0];
+          if(!fitS(B)||( _mrn(F)&&s.t.n>1))continue;
+          if(!tryAddValidated(s.r,s.t,B))continue;
           s2.t.jobs=[];
           const gi=s2.r.trips.indexOf(s2.t);
           if(gi>=0){s2.r.trips.splice(gi,1);s2.r.trips.forEach((tt,ii)=>tt.n=ii+1);drvTrips.set(s2.r.drv.id,s2.r.trips.length);s2.r.daySchedule=calcDaySched(s2.r.trips,s2.r.drv,cfg);}
-          s.t.jobs.push(B);did=true;
-          s.r.daySchedule=calcDaySched(s.r.trips,s.r.drv,cfg);
-          warns.push({lv:'wn',msg:`📦【2台積み統合】${B.vehicle}（${B.pc||B.pp}）を${s2.r.drv.name}の1台便から${s.r.drv.name}${s.t.n}便へ統合（2台積みが原則）`});
+          did=true;placed=true;
+          warns.push({lv:'wn',msg:`📦【2台積み統合】${B.vehicle}（${B.pc||B.pp}）を${s2.r.drv.name}の1台便から${s.r.drv.name}${s.t.n}便へ統合（2台積みが原則・時間検証済）`});
           break;
         }
+        if(placed)break;
       }
       if(!did)break;
     }
