@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>配車管理システム｜野田ヤード v10.3</title>
+<title>配車管理システム｜野田ヤード v10.4</title>
 <style>
 :root{--p:#1a4f8b;--pl:#2563b0;--ac:#e8750a;--ok:#16a34a;--wn:#d97706;--ng:#dc2626;
 --bg:#f0f4f8;--card:#fff;--bd:#d1d9e0;--tx:#1e293b;--mu:#64748b;
@@ -166,8 +166,8 @@ tr:hover td{background:#f8fafc;}
 <header>
   <h1>🚛 配車管理システム</h1>
   <div class="dbadge" id="hdrDate"></div>
-  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v10.3</span>
-  <span style="font-size:11px;opacity:.7;">更新: 2026/07/20 v10.3</span>
+  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v10.4</span>
+  <span style="font-size:11px;opacity:.7;">更新: 2026/07/20 v10.4</span>
   <span id="syncBadge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.18);">…</span>
   <span style="display:flex;gap:6px;margin-left:auto;align-items:center;">
     <button class="btn btn-o btn-sm" onclick="setApiUrl()" title="クラウド共有のURL設定（GASのウェブアプリ exec URL）。空欄で共有オフ">⚙ 共有設定</button>
@@ -4519,9 +4519,10 @@ function _genPlanCore(){
     for(let i=r.jobs.length-1;i>=1;i--){
       const j=r.jobs[i];
       const tTo=(j.time?parseTimeRange(j.time).tTo:0)||0;
-      // ★v10.3: 「AM指定」は自走の2件目以降に置かない（現場指摘=計算上ギリでも実運用NG）。
-      //   午前締切の時間指定(9:00〜12:00等)は従来どおり到着計算で判定。
-      if(getEffectiveSlot(j)==='am'||(tTo>0&&arrs[i]>tTo)){
+      // ★v10.4: 自走2件目以降のAM指定は「11:30までに到着できる場合のみ可」（30分の安全バッファ）
+      //   例: 春日部①→戸田②=11:25着 ✓可 / 杉並①→戸田②=11:55着 ✗ギリギリすぎるので解除（現場確認済み）
+      //   午前締切の時間指定(9:00〜12:00等)は従来どおり窓の締切で判定。
+      if((getEffectiveSlot(j)==='am'&&arrs[i]>690)||(tTo>0&&arrs[i]>tTo)){
         r.jobs.splice(i,1);
         assignedJ.delete(j.id);
         if(!unassT.includes(j))unassT.push(j);
