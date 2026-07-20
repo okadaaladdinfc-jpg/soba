@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>配車管理システム｜野田ヤード v10.1</title>
+<title>配車管理システム｜野田ヤード v10.2</title>
 <style>
 :root{--p:#1a4f8b;--pl:#2563b0;--ac:#e8750a;--ok:#16a34a;--wn:#d97706;--ng:#dc2626;
 --bg:#f0f4f8;--card:#fff;--bd:#d1d9e0;--tx:#1e293b;--mu:#64748b;
@@ -166,8 +166,8 @@ tr:hover td{background:#f8fafc;}
 <header>
   <h1>🚛 配車管理システム</h1>
   <div class="dbadge" id="hdrDate"></div>
-  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v10.1</span>
-  <span style="font-size:11px;opacity:.7;">更新: 2026/07/13 v10.1</span>
+  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v10.2</span>
+  <span style="font-size:11px;opacity:.7;">更新: 2026/07/14 v10.2</span>
   <span id="syncBadge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.18);">…</span>
   <span style="display:flex;gap:6px;margin-left:auto;align-items:center;">
     <button class="btn btn-o btn-sm" onclick="setApiUrl()" title="クラウド共有のURL設定（GASのウェブアプリ exec URL）。空欄で共有オフ">⚙ 共有設定</button>
@@ -570,6 +570,16 @@ document.addEventListener('DOMContentLoaded',()=>{
     const _dd=String(_today.getDate()).padStart(2,'0');
     const _dp=document.getElementById('dispatchDate');
     if(_dp)_dp.value=`${_yyyy}-${_mm}-${_dd}`;
+    // ★v10.2: 保存済みの配車設定（目標現着・引取/降ろし・遠方判定）を自動復元
+    try{
+      const _pc=S.manualTransport&&S.manualTransport.__planCfg;
+      if(_pc){
+        if(_pc.tgt)document.getElementById('tgtArr').value=_pc.tgt;
+        if(_pc.pk)document.getElementById('pkDur').value=_pc.pk;
+        if(_pc.ul)document.getElementById('ulDur').value=_pc.ul;
+        if(_pc.far)document.getElementById('farTh').value=_pc.far;
+      }
+    }catch(e){}
     updDate();renderAll();
   }
   // ★v8.5: クラウド時はサーバから非同期読込→描画。ローカル時は従来どおり同期。
@@ -2125,6 +2135,16 @@ function _genPlanCore(){
   const farTh=parseInt(document.getElementById('farTh').value)||150;
   DISPATCH_FAR_TH=farTh; // isFarJobに反映（UIの遠方判定設定を全判定に連動）
   const cfg={tgt,pkDur,ulDur,farTh};
+  // ★v10.2: 配車設定を記憶（クラウド共有・毎回入力し直さなくてよいように）
+  try{
+    const _pc={tgt:document.getElementById('tgtArr').value,pk:pkDur,ul:ulDur,far:farTh};
+    if(!S.manualTransport)S.manualTransport={};
+    const _old=S.manualTransport.__planCfg;
+    if(!_old||_old.tgt!==_pc.tgt||_old.pk!==_pc.pk||_old.ul!==_pc.ul||_old.far!==_pc.far){
+      S.manualTransport.__planCfg=_pc;
+      save();
+    }
+  }catch(e){}
 
   // ★v4.9: 旧バージョンで保存された案件データへの遡及適用
   // isHiRoofフラグが無い/未設定でも車名から自動判定（高さルールの仕組み化①）
