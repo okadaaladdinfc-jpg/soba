@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>配車管理システム｜野田ヤード v10.5</title>
+<title>配車管理システム｜野田ヤード v10.6</title>
 <style>
 :root{--p:#1a4f8b;--pl:#2563b0;--ac:#e8750a;--ok:#16a34a;--wn:#d97706;--ng:#dc2626;
 --bg:#f0f4f8;--card:#fff;--bd:#d1d9e0;--tx:#1e293b;--mu:#64748b;
@@ -167,8 +167,8 @@ tr:hover td{background:#f8fafc;}
 <header>
   <h1>🚛 配車管理システム</h1>
   <div class="dbadge" id="hdrDate"></div>
-  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v10.5</span>
-  <span style="font-size:11px;opacity:.7;">更新: 2026/07/21 v10.5</span>
+  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v10.6</span>
+  <span style="font-size:11px;opacity:.7;">更新: 2026/07/21 v10.6</span>
   <span id="syncBadge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.18);">…</span>
   <span style="display:flex;gap:6px;margin-left:auto;align-items:center;">
     <button class="btn btn-o btn-sm" onclick="setApiUrl()" title="クラウド共有のURL設定（GASのウェブアプリ exec URL）。空欄で共有オフ">⚙ 共有設定</button>
@@ -2666,11 +2666,11 @@ function _genPlanCore(){
             r0.trips.splice(0,0,{n:1,jobs:[j1],overCap:true,rescue:true});
             r0.trips.forEach((tt,ii)=>tt.n=ii+1);
             drvTrips.set(d0.id,r0.trips.length);
-            warns.push({lv:'wn',msg:`🆘【遠方を1便目に割込】${j1.vehicle}（${j1.pc||j1.pp}）→ ${d0.name}1便目（近場便は後ろへ・時間要確認）`});
+            warns.push({lv:'wn',jid:j1.id,when:'assigned',driverId:d0.id,tripNo:1,msg:`🆘【遠方を1便目に割込】${j1.vehicle}（${j1.pc||j1.pp}）→ ${d0.name}1便目（近場便は後ろへ・時間要確認）`});
             continue;
           }
         }
-        warns.push({lv:'er',msg:`⚠【強制割当】${j1.vehicle}（${j1.pp||''} ${j1.pc||''}）→${forceTarget.name}：制約超過・手動確認が必要です`});
+        warns.push({lv:'er',jid:j1.id,when:'assigned',driverId:forceTarget.id,msg:`⚠【強制割当】${j1.vehicle}（${j1.pp||''} ${j1.pc||''}）→${forceTarget.name}：制約超過・手動確認が必要です`});
         const fRoute=truckRoutes.find(r=>r.drv.id===forceTarget.id);
         const fTripN=drvTrips.get(forceTarget.id)+1;
         assignedT.add(j1.id);
@@ -2694,13 +2694,13 @@ function _genPlanCore(){
             const j2f=f2[0];
             assignedT.add(j2f.id);
             fTrip.jobs.push(j2f);
-            warns.push({lv:'wn',msg:`🚛【強制割当ペア】${j1.vehicle}+${j2f.vehicle}：同方向のため2台積みでペア（手動確認推奨）`});
+            warns.push({lv:'wn',jids:[j1.id,j2f.id],when:'assigned',driverId:forceTarget.id,sameTrip:true,msg:`🚛【強制割当ペア】${j1.vehicle}+${j2f.vehicle}：同方向のため2台積みでペア（手動確認推奨）`});
           }
         }
         continue;
       }
       // 本当に誰もいない場合のみ未割当
-      warns.push({lv:'er',msg:`⚠【未割当】${j1.vehicle}（${j1.pp||''} ${j1.pc||''}）：配車不可。手動対応が必要です。`});
+      warns.push({lv:'er',jid:j1.id,when:'unassigned',msg:`⚠【未割当】${j1.vehicle}（${j1.pp||''} ${j1.pc||''}）：配車不可。手動対応が必要です。`});
       assignedT.add(j1.id);
       continue;
     }
@@ -2726,7 +2726,7 @@ function _genPlanCore(){
       // (ヘルプ正社員が早朝出発で対応可能なケース)
       if(getEffectiveSlot(j1)==='am'&&(reason.includes('AM')||reason.includes('正午前'))){
         amDeferred.add(j1.id);
-        warns.push({lv:'wn',msg:`⚠ ${j1.vehicle}（${j1.pp||''} ${j1.pc||''}）AM指定：通常ドライバーでは正午前着困難 → ヘルプドライバー配車を試みます`});
+        warns.push({lv:'wn',jid:j1.id,when:'unassigned',msg:`⚠ ${j1.vehicle}（${j1.pp||''} ${j1.pc||''}）AM指定：通常ドライバーでは正午前着困難 → ヘルプドライバー配車を試みます`});
       } else {
         warns.push({lv:'er',jid:j1.id,when:'unassigned',msg:`⚠【強制未割当】${j1.vehicle}（${j1.pp||''} ${j1.pc||''}）→ ${drv.name}：${reason}。手動対応が必要です。`});
       }
@@ -2742,8 +2742,8 @@ function _genPlanCore(){
     drvTrips.set(drv.id,tripNum);
 
     // 警告
-    if(tier>=2) warns.push({lv:'wn',msg:`${drv.name} ${tripNum}便目（設定上限超え）：${j1.vehicle} ${j1.pc||''}`});
-    if(tier>=3) warns.push({lv:'wn',msg:`${j1.vehicle}：車両条件を無視して${drv.name}に割当（canDiff/compat制約なし）`});
+    if(tier>=2) warns.push({lv:'wn',jid:j1.id,when:'assigned',driverId:drv.id,tripNo:tripNum,msg:`${drv.name} ${tripNum}便目（設定上限超え）：${j1.vehicle} ${j1.pc||''}`});
+    if(tier>=3) warns.push({lv:'wn',jid:j1.id,when:'assigned',driverId:drv.id,msg:`${j1.vehicle}：車両条件を無視して${drv.name}に割当（canDiff/compat制約なし）`});
 
     // 2台目ペアリング（4段階方向マッチ・単発は車種理由のみ許可）
     if(!isTanpatsu(j1)){
@@ -2959,7 +2959,7 @@ function _genPlanCore(){
         trip.jobs.forEach(job=>{
           checkerFns.forEach((fn,i)=>{
             const reason=fn(d,job,cur,ms);
-            if(reason) warns.push({lv:checkerLevels[i],msg:`[${checkerNames[i]}担当] ${d.name}${trip.n}便 ${job.vehicle}（${job.pc||''}）：${reason}`});
+            if(reason) warns.push({lv:checkerLevels[i],jid:job.id,when:'assigned',driverId:d.id,tripNo:trip.n,msg:`[${checkerNames[i]}担当] ${d.name}${trip.n}便 ${job.vehicle}（${job.pc||''}）：${reason}`});
           });
         });
       });
@@ -3122,7 +3122,7 @@ function _genPlanCore(){
         activatedFromHelp.add(d.id); // ★Fix J
       }
       const j2Part=j2CandS2?`+${j2CandS2.vehicle}`:'';
-      warns.push({lv:'wn',msg:`⚠ ${d.name}（正社員）${tripNum}便確保：${cand.vehicle}${j2Part}（${cand.pc||''}）${isJiso?'[仮ナンバー引取]':''}制約緩和割当`});
+      warns.push({lv:'wn',jids:[cand.id].concat(j2CandS2?[j2CandS2.id]:[]),when:'assigned',driverId:d.id,sameTrip:true,msg:`⚠ ${d.name}（正社員）${tripNum}便確保：${cand.vehicle}${j2Part}（${cand.pc||''}）${isJiso?'[仮ナンバー引取]':''}制約緩和割当`});
     }
 
     // ★Fix J: 第2パス — helpSeishainから有効化されたドライバーの2便目確保
@@ -3153,7 +3153,7 @@ function _genPlanCore(){
       const tripNum2=drvTrips.get(d.id)+1;
       route.trips.push({n:tripNum2,jobs:[cand2],overCap:false,seishainForce:true});
       drvTrips.set(d.id,tripNum2);
-      warns.push({lv:'wn',msg:`⚠ ${d.name}（正社員）${tripNum2}便確保(2ndパス)：${cand2.vehicle}（${cand2.pc||''}）${isJiso2?'[仮ナンバー引取]':''}制約緩和割当`});
+      warns.push({lv:'wn',jid:cand2.id,when:'assigned',driverId:d.id,msg:`⚠ ${d.name}（正社員）${tripNum2}便確保(2ndパス)：${cand2.vehicle}（${cand2.pc||''}）${isJiso2?'[仮ナンバー引取]':''}制約緩和割当`});
     }
 
     // ── Trip Stealing: 残案件ゼロで1便正社員が残っている場合 ──
@@ -3183,7 +3183,7 @@ function _genPlanCore(){
         const newN=drvTrips.get(d.id)+1;
         dRoute.trips.push({...stealTrip,n:newN,seishainStolen:true});
         drvTrips.set(d.id,newN);
-        warns.push({lv:'wn',msg:`⚠ ${d.name}（正社員）2便確保（再配分）：${stealTrip.jobs.map(j=>j.vehicle).join('+')}を${donor.name}から移動（手動確認要）`});
+      warns.push({lv:'wn',jids:stealTrip.jobs.map(j=>j.id),when:'assigned',driverId:d.id,sameTrip:true,msg:`⚠ ${d.name}（正社員）2便確保（再配分）：${stealTrip.jobs.map(j=>j.vehicle).join('+')}を${donor.name}から移動（手動確認要）`});
       });
   }
 
@@ -3213,7 +3213,7 @@ function _genPlanCore(){
         if(r.truck&&!checkCompat(r.truck,aj).ok)continue; // ★v10.5: 車両適合
         if(!pairWOK(r.truck,j1,aj))continue;              // ★v10.5: 合計重量（サーフ+ヴィッツ2.9t>2.7t等を防止）
         t.jobs.push(aj);done=true;
-        warns.push({lv:'wn',msg:`🌅【AM救済】${aj.vehicle}（${aj.pc||aj.pp}）を${r.drv.name}1便目に追加（手動確認推奨）`});
+        warns.push({lv:'wn',jid:aj.id,when:'assigned',driverId:r.drv.id,tripNo:1,msg:`🌅【AM救済】${aj.vehicle}（${aj.pc||aj.pp}）を${r.drv.name}1便目に追加（手動確認推奨）`});
       }
       // (b) 1便目の仮ナンバーj2と入替（方向45度以内の強一致のみ）
       if(!done)for(const r of truckRoutes){
@@ -3231,7 +3231,7 @@ function _genPlanCore(){
         const kicked=t.jobs.splice(kIdx,1)[0];
         assignedT.delete(kicked.id);
         t.jobs.push(aj);done=true;
-        warns.push({lv:'wn',msg:`🌅【AM救済・入替】${aj.vehicle}（${aj.pc||aj.pp}）を${r.drv.name}1便目へ。押し出した${kicked.vehicle}（${kicked.pc||kicked.pp}）は自走/転送に回します`});
+        warns.push({lv:'wn',jid:aj.id,when:'assigned',driverId:r.drv.id,tripNo:1,alsoUnassigned:kicked.id,msg:`🌅【AM救済・入替】${aj.vehicle}（${aj.pc||aj.pp}）を${r.drv.name}1便目へ。押し出した${kicked.vehicle}（${kicked.pc||kicked.pp}）は自走/転送に回します`});
       }
     });
   }
@@ -3958,7 +3958,7 @@ function _genPlanCore(){
           give.r.trips.forEach((tt,ii)=>tt.n=ii+1);
           drvTrips.set(give.r.drv.id,give.r.trips.length);
           give._done=true;recv._done=true;
-          warns.push({lv:'wn',msg:`🔗【単発便統合】${recv.t.jobs[0].vehicle}（${recv.t.jobs[0].pc||recv.t.jobs[0].pp}）＋${rj.vehicle}（${rj.pc||rj.pp}）→ ${recv.r.drv.name}${recv.t.n}便に2台積み（${give.r.drv.name}の単発便を解消）`});
+          warns.push({lv:'wn',jids:recv.t.jobs.map(j=>j.id),when:'assigned',driverId:recv.r.drv.id,tripNo:recv.t.n,sameTrip:true,msg:`🔗【単発便統合】${recv.t.jobs[0].vehicle}（${recv.t.jobs[0].pc||recv.t.jobs[0].pp}）＋${rj.vehicle}（${rj.pc||rj.pp}）→ ${recv.r.drv.name}${recv.t.n}便に2台積み（${give.r.drv.name}の単発便を解消）`});
           return true;
         };
         if(tryMerge(a,b)||tryMerge(b,a))break;
@@ -4003,7 +4003,7 @@ function _genPlanCore(){
           idle.trips.push({...t,n:idle.trips.length+1});
           drvTrips.set(busy.drv.id,busy.trips.length);
           drvTrips.set(idle.drv.id,idle.trips.length);
-          warns.push({lv:'wn',msg:`⚖【負荷平準化】${t.jobs.map(j=>j.vehicle).join('+')} を ${busy.drv.name}→${idle.drv.name}へ移動（拘束時間差 約${Math.round(gap/60*10)/10}時間）`});
+          warns.push({lv:'wn',jids:t.jobs.map(j=>j.id),when:'assigned',driverId:idle.drv.id,sameTrip:true,msg:`⚖【負荷平準化】${t.jobs.map(j=>j.vehicle).join('+')} を ${busy.drv.name}→${idle.drv.name}へ移動（拘束時間差 約${Math.round(gap/60*10)/10}時間）`});
           moved=true;
         }
       }
@@ -4063,7 +4063,7 @@ function _genPlanCore(){
           s.t.jobs.push(P);
           movedOnce.add(P.id);
           did=true;
-          warns.push({lv:'wn',msg:`🔗【遠方ペアシフト】${F.vehicle}（${F.pc||F.pp}）に ${P.vehicle}（${P.pc||P.pp}）を組付け（${r2.drv.name}${t2.n}便から移動・遠い順にペアを詰める方針）`});
+          warns.push({lv:'wn',jids:[F.id,P.id],when:'assigned',driverId:s.r.drv.id,tripNo:s.t.n,sameTrip:true,msg:`🔗【遠方ペアシフト】${F.vehicle}（${F.pc||F.pp}）に ${P.vehicle}（${P.pc||P.pp}）を組付け（${r2.drv.name}${t2.n}便から移動・遠い順にペアを詰める方針）`});
           break; // 1回の反復で1移動→singlesを再評価
         }
       }
@@ -4096,7 +4096,7 @@ function _genPlanCore(){
         if(!X||!Y)return;
         const sw=(recv,give,P1,P2,part1,part2)=>{
           recv.t.jobs=[P1,P2];give.t.jobs=[part1,part2];
-          warns.push({lv:'wn',msg:`🏙【同一市ペア・入替】${pc}：${P1.vehicle}+${P2.vehicle} を${recv.r.drv.name}${recv.t.n}便に集約（相方${part2.vehicle}は${give.r.drv.name}${give.t.n}便へ）`});
+          warns.push({lv:'wn',jids:[P1.id,P2.id],when:'assigned',driverId:recv.r.drv.id,tripNo:recv.t.n,sameTrip:true,msg:`🏙【同一市ペア・入替】${pc}：${P1.vehicle}+${P2.vehicle} を${recv.r.drv.name}${recv.t.n}便に集約（相方${part2.vehicle}は${give.r.drv.name}${give.t.n}便へ）`});
         };
         if(fits(B,a.x)&&fits(X,b.x)&&!(_NLr(A)&&_NLr(B))&&!(_NLr(Y)&&_NLr(X))&&pairDirOK(Y,X)&&pairWOK(a.x.r.truck,A,B)&&pairWOK(b.x.r.truck,Y,X)){sw(a.x,b.x,A,B,Y,X);return;}
         if(fits(A,b.x)&&fits(Y,a.x)&&!(_NLr(B)&&_NLr(A))&&!(_NLr(X)&&_NLr(Y))&&pairDirOK(X,Y)&&pairWOK(b.x.r.truck,B,A)&&pairWOK(a.x.r.truck,X,Y)){sw(b.x,a.x,B,A,X,Y);return;}
@@ -4122,7 +4122,7 @@ function _genPlanCore(){
         hit.t.jobs=[A,B];
         unassT.splice(ui,1);assignedT.add(B.id);
         assignedT.delete(X.id);unassT.push(X);
-        warns.push({lv:'wn',msg:`🏙【同一市ペア・未割当入替】${ckB}：${A.vehicle}+${B.vehicle} を${hit.r.drv.name}${hit.t.n}便に集約（相方${X.vehicle}は未割当へ→補充で再配置）`});
+        warns.push({lv:'wn',jids:[A.id,B.id],when:'assigned',driverId:hit.r.drv.id,tripNo:hit.t.n,sameTrip:true,alsoUnassigned:X.id,msg:`🏙【同一市ペア・未割当入替】${ckB}：${A.vehicle}+${B.vehicle} を${hit.r.drv.name}${hit.t.n}便に集約（相方${X.vehicle}は未割当へ→補充で再配置）`});
       }
     }
     allT.filter(x=>x.t.jobs.length===1&&!isTanpatsu(x.t.jobs[0])).forEach(sa=>{
@@ -4140,7 +4140,7 @@ function _genPlanCore(){
           if(bi<0)continue;
           const B=xb.t.jobs.splice(bi,1)[0];
           sa.t.jobs.push(B);
-          warns.push({lv:'wn',msg:`🏙【同一市ペア】${ckA}：${A.vehicle}+${B.vehicle} を${sa.r.drv.name}${sa.t.n}便に集約（同じ市は同便で引き取り）`});
+          warns.push({lv:'wn',jids:[A.id,B.id],when:'assigned',driverId:sa.r.drv.id,tripNo:sa.t.n,sameTrip:true,msg:`🏙【同一市ペア】${ckA}：${A.vehicle}+${B.vehicle} を${sa.r.drv.name}${sa.t.n}便に集約（同じ市は同便で引き取り）`});
           if(xb.t.jobs.length===0){
             const idx=xb.r.trips.indexOf(xb.t);
             if(idx>=0){xb.r.trips.splice(idx,1);xb.r.trips.forEach((tt,ii)=>tt.n=ii+1);drvTrips.set(xb.r.drv.id,xb.r.trips.length);}
@@ -4165,7 +4165,7 @@ function _genPlanCore(){
         const B=unassT.splice(ui,1)[0];
         assignedT.add(B.id);
         sa.t.jobs.push(B);
-        warns.push({lv:'wn',msg:`🏙【${uLbl}】${A.vehicle}（${A.pc}）+${B.vehicle}（${B.pc}）→ ${sa.r.drv.name}${sa.t.n}便`});
+        warns.push({lv:'wn',jids:[A.id,B.id],when:'assigned',driverId:sa.r.drv.id,tripNo:sa.t.n,sameTrip:true,msg:`🏙【${uLbl}】${A.vehicle}（${A.pc}）+${B.vehicle}（${B.pc}）→ ${sa.r.drv.name}${sa.t.n}便`});
       }
     });
     doSameCitySwaps(); // ★v9.3: 補充・入替後に同一市分裂が残っていないか再実行（練馬×2が別便に残る問題の解消）
@@ -4192,7 +4192,7 @@ function _genPlanCore(){
           r.trips.splice(0,0,{n:1,jobs:newJobs,amFront:true});
           r.trips.forEach((tt,ii)=>tt.n=ii+1);
           drvTrips.set(drv.id,r.trips.length);
-          warns.push({lv:'wn',msg:`🌅【AM先行便】${drv.name}：${newJobs.map(j=>`${j.vehicle}（${j.pc||j.pp}）`).join('+')} を1便目に挿入（元の便は時間フリーのため後ろへ）`});
+          warns.push({lv:'wn',jids:newJobs.map(j=>j.id),when:'assigned',driverId:drv.id,tripNo:1,sameTrip:true,msg:`🌅【AM先行便】${drv.name}：${newJobs.map(j=>`${j.vehicle}（${j.pc||j.pp}）`).join('+')} を1便目に挿入（元の便は時間フリーのため後ろへ）`});
         }
       }
       // (b) 2便目確保（まだ1便のままなら非AMの未割当を追加）
@@ -4206,7 +4206,7 @@ function _genPlanCore(){
           if(m2>=0){const j2=unassT.splice(m2,1)[0];assignedT.add(j2.id);newJobs.push(j2);}
           r.trips.push({n:r.trips.length+1,jobs:newJobs,fillTrip:true});
           drvTrips.set(drv.id,r.trips.length);
-          warns.push({lv:'wn',msg:`🚛【2便目確保】${drv.name}：${newJobs.map(j=>`${j.vehicle}（${j.pc||j.pp}）`).join('+')} を追加（未割当の解消・手動確認推奨）`});
+          warns.push({lv:'wn',jids:newJobs.map(j=>j.id),when:'assigned',driverId:drv.id,sameTrip:true,msg:`🚛【2便目確保】${drv.name}：${newJobs.map(j=>`${j.vehicle}（${j.pc||j.pp}）`).join('+')} を追加（未割当の解消・手動確認推奨）`});
         }
       }
     });
@@ -4215,7 +4215,7 @@ function _genPlanCore(){
   // ★v6.2: 統合しきれなかった1台便（単発対象外）を赤字警告で明示
   truckRoutes.forEach(r=>r.trips.forEach(t=>{
     if(t.jobs.length===1&&!isTanpatsu(t.jobs[0]))
-      warns.push({lv:'wn',msg:`⚠【1台便】${r.drv.name}${t.n}便：${t.jobs[0].vehicle}（${t.jobs[0].pc||t.jobs[0].pp}）が1台積みです。ドラッグで他便と組むか確認してください。`});
+      warns.push({lv:'wn',jid:t.jobs[0].id,when:'assigned',driverId:r.drv.id,tripNo:t.n,singleTrip:true,msg:`⚠【1台便】${r.drv.name}${t.n}便：${t.jobs[0].vehicle}（${t.jobs[0].pc||t.jobs[0].pp}）が1台積みです。ドラッグで他便と組むか確認してください。`});
   }));
 
   // ★v4.9: 車高ルール最終検証＆自動修復（高さルールの仕組み化②）──────
@@ -4290,14 +4290,14 @@ function _genPlanCore(){
     const finalActiveDrvs=truckDrvs.filter(d=>!d._skipByHelp);
     const tripSummary=finalActiveDrvs.map(d=>`${d.name}:${drvTrips.get(d.id)}便`).join(' / ');
     const pnFarHit=truckJobs.filter(j=>isFarJob(j)).length;
-    warns.push({lv:'wn',msg:`📊配車サマリー: ${tripSummary}`});
+    warns.push({lv:'wn',kind:'routeSummary',msg:`📊配車サマリー: ${tripSummary}`});
     // 正社員1便チェック（全後処理後の最終状態で評価）
     const seishainUnder2=finalActiveDrvs.filter(d=>d.empType==='seishain'&&!d.isHelp&&drvTrips.get(d.id)<2);
-    if(seishainUnder2.length)warns.push({lv:'er',msg:`⚠ 2便未達の正社員(${seishainUnder2.length}名): ${seishainUnder2.map(d=>d.name+'('+drvTrips.get(d.id)+'便)').join(', ')} | 遠方案件数:${pnFarHit}`});
+    if(seishainUnder2.length)warns.push({lv:'er',kind:'employeeTripSummary',msg:`⚠ 2便未達の正社員(${seishainUnder2.length}名): ${seishainUnder2.map(d=>d.name+'('+drvTrips.get(d.id)+'便)').join(', ')} | 遠方案件数:${pnFarHit}`});
     // 個別ルート別1便警告
     truckRoutes.forEach(r=>{
       if(r.drv.empType==='seishain'&&!r.drv.isHelp&&r.trips.length<2){
-        warns.push({lv:'wn',msg:`⚠【正社員1便のみ】${r.drv.name}：正社員は2便以上が必要（近場案件不足または案件条件未適合）。手動調整してください。`});
+        warns.push({lv:'wn',kind:'employeeTripSummary',driverId:r.drv.id,msg:`⚠【正社員1便のみ】${r.drv.name}：正社員は2便以上が必要（近場案件不足または案件条件未適合）。手動調整してください。`});
       }
     });
     // ヘルプ要員の待機報告（_skipByHelpが解除されていないもののみ）
@@ -4361,12 +4361,12 @@ function _genPlanCore(){
     if(j.timeSlot==='time'&&j.time){
       const{tFrom,tTo}=parseTimeRange(j.time);
       if(tTo>0&&arr>tTo)
-        warns.push({lv:'er',jid:j.id,when:'assigned',msg:`🔴【時間指定NG】${j.vehicle}（${j.pc||j.pp}・${j.time}指定）→ ${r.drv.name}${t.n}便の推定到着${toHM(arr)}で間に合いません。便の順序変更かドラッグで他便へ移してください。`});
+        warns.push({lv:'er',jid:j.id,when:'assigned',driverId:r.drv.id,tripNo:t.n,msg:`🔴【時間指定NG】${j.vehicle}（${j.pc||j.pp}・${j.time}指定）→ ${r.drv.name}${t.n}便の推定到着${toHM(arr)}で間に合いません。便の順序変更かドラッグで他便へ移してください。`});
       else if(tFrom>0&&arr>tFrom-0&&tTo>0&&tTo-arr<30)
-        warns.push({lv:'wn',jid:j.id,when:'assigned',msg:`⚠【時間指定ギリギリ】${j.vehicle}（${j.time}指定）到着${toHM(arr)}：余裕${tTo-arr}分。交通事情に注意。`});
+        warns.push({lv:'wn',jid:j.id,when:'assigned',driverId:r.drv.id,tripNo:t.n,msg:`⚠【時間指定ギリギリ】${j.vehicle}（${j.time}指定）到着${toHM(arr)}：余裕${tTo-arr}分。交通事情に注意。`});
     }
     if(getEffectiveSlot(j)==='am'&&arr>690&&arr<=720)
-      warns.push({lv:'wn',jid:j.id,when:'assigned',msg:`⚠【AMリスク】${j.vehicle}（${j.pc||j.pp}・AM指定）推定到着${toHM(arr)}：交通事情次第で正午に間に合わないリスクあり。`});
+      warns.push({lv:'wn',jid:j.id,when:'assigned',driverId:r.drv.id,tripNo:t.n,msg:`⚠【AMリスク】${j.vehicle}（${j.pc||j.pp}・AM指定）推定到着${toHM(arr)}：交通事情次第で正午に間に合わないリスクあり。`});
   })));
   // ★v9.5: AM指定の最終強制 — 最終タイムラインで正午に間に合わないAMは自動割当のまま残さない（未割当へ戻す）
   {
@@ -4443,7 +4443,7 @@ function _genPlanCore(){
       r.trips.forEach((tt,ii)=>tt.n=ii+1);
       drvTrips.set(drv.id,r.trips.length);
       r.daySchedule=calcDaySched(r.trips,r.drv,cfg);
-      warns.push({lv:'wn',msg:`🌅【AM先行便】${drv.name}：${jobs.map(j=>`${j.vehicle}（${j.pc||j.pp}）`).join('+')} を1便目に挿入（既存便は後ろへ）`});
+      warns.push({lv:'wn',jids:jobs.map(j=>j.id),when:'assigned',driverId:drv.id,tripNo:1,sameTrip:true,msg:`🌅【AM先行便】${drv.name}：${jobs.map(j=>`${j.vehicle}（${j.pc||j.pp}）`).join('+')} を1便目に挿入（既存便は後ろへ）`});
     });
     // ★v9.8: AM優先1便目入替 — それでも残るAM未割当は、1便目を占有する時間フリーの非AM案件と入替
     //   （「1便目スロットはAM指定優先。非AMは後回しにしても手動調整が楽」＝現場ルール）
@@ -4473,7 +4473,7 @@ function _genPlanCore(){
       unassT.splice(ui,1);assignedT.add(A.id);
       assignedT.delete(X.id);unassT.push(X);
       cand.daySchedule=calcDaySched(cand.trips,cand.drv,cfg);
-      warns.push({lv:'wn',msg:`🌅【AM優先入替】${A.vehicle}（${A.pc||A.pp}・AM指定）を${cand.drv.name}1便目へ。時間フリーの${X.vehicle}（${X.pc||X.pp}）は未割当に（後便/他Dで対応）`});
+      warns.push({lv:'wn',jid:A.id,when:'assigned',driverId:cand.drv.id,tripNo:1,alsoUnassigned:X.id,msg:`🌅【AM優先入替】${A.vehicle}（${A.pc||A.pp}・AM指定）を${cand.drv.name}1便目へ。時間フリーの${X.vehicle}（${X.pc||X.pp}）は未割当に（後便/他Dで対応）`});
     }
     };
     // ★v10.0: 即時実行をやめ、自走の割当解除後に「全AM候補が出揃った状態で」1回だけ実行
@@ -4608,7 +4608,7 @@ function _genPlanCore(){
           if(tryAddValidated(s.r,s.t,B)){
             unassT.splice(c.idx,1);
             assignedT.add(B.id);did=true;placed=true;
-            warns.push({lv:'wn',msg:`📦【2台積み統合】${s.r.drv.name}${s.t.n}便：${F.vehicle}（${F.pc||F.pp}）に未割当の${B.vehicle}（${B.pc||B.pp}）を積み合わせ（2台積みが原則・時間検証済）`});
+            warns.push({lv:'wn',jids:[F.id,B.id],when:'assigned',driverId:s.r.drv.id,tripNo:s.t.n,sameTrip:true,msg:`📦【2台積み統合】${s.r.drv.name}${s.t.n}便：${F.vehicle}（${F.pc||F.pp}）に未割当の${B.vehicle}（${B.pc||B.pp}）を積み合わせ（2台積みが原則・時間検証済）`});
             break;
           }
         }
@@ -4623,7 +4623,7 @@ function _genPlanCore(){
           const gi=s2.r.trips.indexOf(s2.t);
           if(gi>=0){s2.r.trips.splice(gi,1);s2.r.trips.forEach((tt,ii)=>tt.n=ii+1);drvTrips.set(s2.r.drv.id,s2.r.trips.length);s2.r.daySchedule=calcDaySched(s2.r.trips,s2.r.drv,cfg);}
           did=true;placed=true;
-          warns.push({lv:'wn',msg:`📦【2台積み統合】${B.vehicle}（${B.pc||B.pp}）を${s2.r.drv.name}の1台便から${s.r.drv.name}${s.t.n}便へ統合（2台積みが原則・時間検証済）`});
+          warns.push({lv:'wn',jids:[F.id,B.id],when:'assigned',driverId:s.r.drv.id,tripNo:s.t.n,sameTrip:true,msg:`📦【2台積み統合】${B.vehicle}（${B.pc||B.pp}）を${s2.r.drv.name}の1台便から${s.r.drv.name}${s.t.n}便へ統合（2台積みが原則・時間検証済）`});
           break;
         }
         if(placed)break;
@@ -4659,17 +4659,42 @@ function _genPlanCore(){
         warns.push({lv:'wn',msg:`🔧【ヘルプ時間確認】${jr.drv.name}のヘルプ先「${hj.vehicle}（${hj.pc||hj.pp}）」は午前系（${hj.time||'AM指定'}）：自走車引き上げ後に向かうため間に合うか時間と場所を確認してください`});
     });
   });
-  // ★v10.5: 警告の最終再構築 — 途中経過の警告を最終配車状態と突き合わせ、陳腐化したものを除去（Codex指摘）
-  //   when:'unassigned'の警告=最終的に割当済みなら除去 / when:'assigned'の警告=最終的に未割当(解除済)なら除去
+  // ★v10.6: 警告の最終再構築 — 案件の最終配置（割当先・便・同一便・単発状態）まで照合する。
+  //   v10.5はassigned/unassignedだけを見ていたため、別ドライバーへ移動後も古い担当名の警告が残っていた。
   {
-    const _asg=new Set();
-    truckRoutes.forEach(r=>r.trips.forEach(t=>t.jobs.forEach(j=>_asg.add(j.id))));
-    jisoRoutes.forEach(r=>(r.jobs||[]).forEach(j=>_asg.add(j.id)));
+    const _loc=new Map();
+    truckRoutes.forEach(r=>r.trips.forEach(t=>t.jobs.forEach(j=>_loc.set(j.id,{
+      driverId:r.drv.id,tripNo:t.n,tripKey:`truck:${r.drv.id}:${t.n}`,tripSize:t.jobs.length
+    }))));
+    jisoRoutes.forEach(r=>(r.jobs||[]).forEach((j,i)=>_loc.set(j.id,{
+      driverId:r.drv.id,tripNo:i+1,tripKey:`jiso:${r.drv.id}:${i+1}`,tripSize:1
+    })));
     const _keep=warns.filter(w=>{
-      if(!w.jid||!w.when)return true;
-      return w.when==='unassigned'?!_asg.has(w.jid):_asg.has(w.jid);
+      // 集計系は後段で最終ルートから作り直す。
+      if(w.kind==='routeSummary'||w.kind==='employeeTripSummary')return false;
+      const ids=w.jids||(w.jid?[w.jid]:[]);
+      if(!ids.length)return true; // 地点不明・交通注意など配置非依存の警告
+      const locs=ids.map(id=>_loc.get(id));
+      if(w.when==='unassigned'&&locs.some(Boolean))return false;
+      if(w.when==='assigned'&&locs.some(x=>!x))return false;
+      if(w.driverId&&locs.some(x=>x&&x.driverId!==w.driverId))return false;
+      if(w.tripNo!=null&&locs.some(x=>x&&x.tripNo!==w.tripNo))return false;
+      if(w.sameTrip&&new Set(locs.filter(Boolean).map(x=>x.tripKey)).size!==1)return false;
+      if(w.singleTrip&&locs.some(x=>x&&x.tripSize!==1))return false;
+      if(w.alsoUnassigned&&_loc.has(w.alsoUnassigned))return false;
+      return true;
     });
     warns.length=0;Array.prototype.push.apply(warns,_keep);
+
+    // 最終状態に依存する集計警告はここで再生成する。
+    const _activeRoutes=truckRoutes.filter(r=>!r.drv._skipByHelp);
+    warns.push({lv:'wn',kind:'finalState',msg:`📊配車サマリー: ${_activeRoutes.map(r=>`${r.drv.name}:${r.trips.length}便`).join(' / ')}`});
+    const _under2=_activeRoutes.filter(r=>r.drv.empType==='seishain'&&!r.drv.isHelp&&r.trips.length<2);
+    if(_under2.length){
+      const _farN=truckJobs.filter(j=>isFarJob(j)).length;
+      warns.push({lv:'er',kind:'finalState',msg:`⚠ 2便未達の正社員(${_under2.length}名): ${_under2.map(r=>`${r.drv.name}(${r.trips.length}便)`).join(', ')} | 遠方案件数:${_farN}`});
+      _under2.forEach(r=>warns.push({lv:'wn',kind:'finalState',msg:`⚠【正社員1便のみ】${r.drv.name}：正社員は2便以上が必要（近場案件不足または案件条件未適合）。手動調整してください。`}));
+    }
   }
   renderPlan({truckRoutes,jisoRoutes,yardStf,warns,cfg,helpAssign,unassT});
 }
