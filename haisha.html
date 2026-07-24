@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>配車管理システム｜野田ヤード v10.6</title>
+<title>配車管理システム｜野田ヤード v10.7</title>
 <style>
 :root{--p:#1a4f8b;--pl:#2563b0;--ac:#e8750a;--ok:#16a34a;--wn:#d97706;--ng:#dc2626;
 --bg:#f0f4f8;--card:#fff;--bd:#d1d9e0;--tx:#1e293b;--mu:#64748b;
@@ -167,8 +167,8 @@ tr:hover td{background:#f8fafc;}
 <header>
   <h1>🚛 配車管理システム</h1>
   <div class="dbadge" id="hdrDate"></div>
-  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v10.6</span>
-  <span style="font-size:11px;opacity:.7;">更新: 2026/07/21 v10.6</span>
+  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v10.7</span>
+  <span style="font-size:11px;opacity:.7;">更新: 2026/07/25 v10.7</span>
   <span id="syncBadge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.18);">…</span>
   <span style="display:flex;gap:6px;margin-left:auto;align-items:center;">
     <button class="btn btn-o btn-sm" onclick="setApiUrl()" title="クラウド共有のURL設定（GASのウェブアプリ exec URL）。空欄で共有オフ">⚙ 共有設定</button>
@@ -541,7 +541,7 @@ const DEFAULT_FLEET=[
   {id:'t105',num:'105',series:1,model:'ダイナ',    base:'日進',driver:'斉藤',    maxW:2.7,winch:'strong',pillar:true, longOK:false,upperLimit:'none',notes:''},
   {id:'t106',num:'106',series:1,model:'キャンター',base:'日進',driver:'',        maxW:2.7,winch:'strong',pillar:true, longOK:false,upperLimit:'none',notes:''},
   {id:'t107',num:'107',series:1,model:'エルフ',    base:'日進',driver:'本郷',    maxW:2.7,winch:'strong',pillar:true, longOK:false,upperLimit:'none',notes:''},
-  {id:'t201',num:'201',series:2,model:'エルフ',    base:'日進',driver:'坂',      maxW:3.0,winch:'strong',pillar:false,longOK:false,upperLimit:'none',notes:''},
+  {id:'t201',num:'201',series:2,model:'エルフ',    base:'日進',driver:'坂',      maxW:3.05,winch:'strong',pillar:false,longOK:false,upperLimit:'none',notes:'3.05tまで積載可'},
   {id:'t202',num:'202',series:2,model:'トヨエース',base:'日進',driver:'',        maxW:3.0,winch:'strong',pillar:false,longOK:true, upperLimit:'none',notes:'長尺車OK'},
   {id:'t203',num:'203',series:2,model:'デュトロ',  base:'日進',driver:'',        maxW:3.0,winch:'strong',pillar:false,longOK:false,upperLimit:'none',notes:''},
   {id:'t205',num:'205',series:2,model:'エルフ',    base:'日進',driver:'神戸',    maxW:3.0,winch:'strong',pillar:false,longOK:false,upperLimit:'none',notes:''},
@@ -1005,10 +1005,12 @@ function estimateW(j){
   return{w:0,est:false};
 }
 // 2台合計重量が最大積載量を超えないか（不明車は判定しない）
+// ★v10.7: 推定誤差を考慮し0.3tまでの超過は許容して組む（⚠警告付き＝現場承認 2026-07-25。いわき+サーフ2.9t/2.7t車の定番ペア復活）
+const W_TOLERANCE=0.3;
 function pairWOK(truck,j1,j2){
   if(!truck)return true;
   const a=estimateW(j1),b=estimateW(j2);
-  return !(a.w&&b.w&&(a.w+b.w)>truck.maxW);
+  return !(a.w&&b.w&&(a.w+b.w)>truck.maxW+W_TOLERANCE+0.0001);
 }
 
 // ─── テキスト貼り付けパーサー ───
@@ -4511,13 +4513,16 @@ function _genPlanCore(){
           warns.push({lv:'er',msg:`🔴【上段制限】${r.drv.name}${t.n}便（${truck.num}号車＝上段は軽のみ）：上段想定の${up.vehicle}が軽自動車ではありません。積み分け変更か号車変更が必要です`});
         if(up.w&&up.w>1.5)
           warns.push({lv:'wn',msg:`⚠【上段重量】${r.drv.name}${t.n}便：${up.vehicle}（${up.w}t）が上段想定 → 1.5t超は横転リスク。下段配置/単独便を検討してください`});
-        // ★v9.3/9.4: 2台合計重量 > 最大積載量（未入力は車種名から自動推定。全車の重量が判明した便のみ判定）
+        // ★v9.3/9.4→v10.7: 2台合計重量の2段階判定 — 0.3t以内の超過=⚠許容（推定誤差の範囲・現場承認）/ それ超=🔴
         if(truck){
           const ews=t.jobs.map(j=>estimateW(j));
           if(ews.every(e=>e.w>0)){
             const tw=ews.reduce((s,e)=>s+e.w,0);
-            if(tw>truck.maxW)
-              warns.push({lv:'er',msg:`🔴【積載重量オーバー${ews.some(e=>e.est)?'（推定）':''}】${r.drv.name}${t.n}便：${t.jobs.map((j,i)=>`${j.vehicle}(${ews[i].w}t${ews[i].est?'推定':''})`).join('+')}＝計${Math.round(tw*10)/10}t ＞ ${truck.num}号車 最大${truck.maxW}t。ペアを分けるか大容量号車へ変更してください`});
+            const _lbl=t.jobs.map((j,i)=>`${j.vehicle}(${ews[i].w}t${ews[i].est?'推定':''})`).join('+');
+            if(tw>truck.maxW+W_TOLERANCE+0.0001)
+              warns.push({lv:'er',msg:`🔴【積載重量オーバー${ews.some(e=>e.est)?'（推定）':''}】${r.drv.name}${t.n}便：${_lbl}＝計${Math.round(tw*10)/10}t ＞ ${truck.num}号車 最大${truck.maxW}t。ペアを分けるか大容量号車へ変更してください`});
+            else if(tw>truck.maxW)
+              warns.push({lv:'wn',msg:`⚠【積載重量 許容内超過】${r.drv.name}${t.n}便：${_lbl}＝計${Math.round(tw*10)/10}t（${truck.num}号車 最大${truck.maxW}t＋許容${W_TOLERANCE}t以内）。実重量に注意して積載してください`});
           }
         }
       }
