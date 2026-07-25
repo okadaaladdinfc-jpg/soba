@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>配車管理システム｜野田ヤード v10.7</title>
+<title>配車管理システム｜野田ヤード v10.8</title>
 <style>
 :root{--p:#1a4f8b;--pl:#2563b0;--ac:#e8750a;--ok:#16a34a;--wn:#d97706;--ng:#dc2626;
 --bg:#f0f4f8;--card:#fff;--bd:#d1d9e0;--tx:#1e293b;--mu:#64748b;
@@ -167,8 +167,8 @@ tr:hover td{background:#f8fafc;}
 <header>
   <h1>🚛 配車管理システム</h1>
   <div class="dbadge" id="hdrDate"></div>
-  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v10.7</span>
-  <span style="font-size:11px;opacity:.7;">更新: 2026/07/25 v10.7</span>
+  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v10.8</span>
+  <span style="font-size:11px;opacity:.7;">更新: 2026/07/25 v10.8</span>
   <span id="syncBadge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.18);">…</span>
   <span style="display:flex;gap:6px;margin-left:auto;align-items:center;">
     <button class="btn btn-o btn-sm" onclick="setApiUrl()" title="クラウド共有のURL設定（GASのウェブアプリ exec URL）。空欄で共有オフ">⚙ 共有設定</button>
@@ -2037,6 +2037,9 @@ function pairDirOK(a,b){
   if(a.pc&&b.pc&&cityKeyOf(a.pc)===cityKeyOf(b.pc)) return true; // ★v9.3: 同一市（横浜市中区↔港北区等）は常にペア可
   if(isAqualinePair(a,b)) return true;
   const ta=estimateTravel(a), tb=estimateTravel(b);
+  // ★v10.8: 遠方(≥90分)＋超近場(≤30分)は同便で組まない（本郷ルールの一般化＝現場指摘）。
+  //   超近場は近場同士の便でまとめる方が効率的。※いわき+龍ケ崎(60分)等の路線上ペアは影響なし
+  if(Math.max(ta,tb)>=90&&Math.min(ta,tb)<=30) return false;
   const da=getDir(a.pp,a.pc), db=getDir(b.pp,b.pc);
   if(isOppositeDir(da,db)) return false; // 逆方向は常にNG
   const ra=getRoutesOf(a), rb=getRoutesOf(b);
