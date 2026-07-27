@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>相場表アプリ v2.6（野田ヤード）</title>
+<title>相場表アプリ v2.7（野田ヤード）</title>
 <style>
   :root{
     --bg:#0f1115; --panel:#1a1d24; --panel2:#222631; --line:#2c313c;
@@ -70,7 +70,7 @@
 </head>
 <body>
 <header>
-  <div class="title">📈 相場表アプリ <small>野田ヤード / v2.6（全角・半角検索対応）</small></div>
+  <div class="title">📈 相場表アプリ <small>野田ヤード / v2.7（更新日を保存時に自動更新）</small></div>
   <div class="toolbar">
     <input id="q" class="search" placeholder="車種・型式で検索（例: アルファード MNH15 / セレナ C26）">
     <button class="btn" id="micBtn" title="音声で車種検索">🎤</button>
@@ -118,7 +118,7 @@
     </div>
     <div class="grid2">
       <div class="field"><label>ネギン</label><input id="edNegin" placeholder="264 / 不可"></div>
-      <div class="field"><label>更新日</label><input id="edDate" type="date"></div>
+      <div class="field"><label>更新日（保存時に今日へ更新）</label><input id="edDate" type="date" readonly></div>
     </div>
     <div class="field"><label>年式（型式から調べた生産期間）</label>
       <div style="display:flex;gap:8px">
@@ -611,7 +611,7 @@ document.getElementById("saveBtn").onclick=()=>{
     g:document.getElementById("edNegin").value.trim(),
     memo:(document.getElementById("edMemo").value.trim().replace(/\s*#書OFF/g,"")+(document.getElementById("edNoDoc").checked?" #書OFF":"")).trim(),
     y:document.getElementById("edYear").value.trim(),
-    d:document.getElementById("edDate").value || todayStr()
+    d:todayStr()
   };
   if(!rec.n){ alert("車種・型式を入力してください"); return; }
   let saved;
