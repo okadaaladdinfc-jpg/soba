@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>相場表アプリ v2.0（野田ヤード）</title>
+<title>相場表アプリ v2.6（野田ヤード）</title>
 <style>
   :root{
     --bg:#0f1115; --panel:#1a1d24; --panel2:#222631; --line:#2c313c;
@@ -70,7 +70,7 @@
 </head>
 <body>
 <header>
-  <div class="title">📈 相場表アプリ <small>野田ヤード / v2.5（輸入車35台のエンジン/重量/年式追加）</small></div>
+  <div class="title">📈 相場表アプリ <small>野田ヤード / v2.6（全角・半角検索対応）</small></div>
   <div class="toolbar">
     <input id="q" class="search" placeholder="車種・型式で検索（例: アルファード MNH15 / セレナ C26）">
     <button class="btn" id="micBtn" title="音声で車種検索">🎤</button>
@@ -516,12 +516,19 @@ function priceCell(val, active, hideDoc){
   return `<span class="price ${active?'active-price':''}">${disp}${badge}</span>`;
 }
 
+function searchKey(value){
+  return String(value||"")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[‐‑‒–—―ーｰ−]/g,"-")
+    .replace(/[\s\-_/・･.．,，()（）\[\]【】]+/g,"");
+}
 function render(){
-  const q = document.getElementById("q").value.trim().toLowerCase();
+  const q = searchKey(document.getElementById("q").value);
   const tb = document.getElementById("rows");
   let list = DATA.filter(r=>{
     if(makerFilter && r.m!==makerFilter) return false;
-    if(q){ const hay=(r.m+" "+r.n+" "+(r.memo||"")+" "+lookupEngine(r.n)).toLowerCase(); if(!hay.includes(q)) return false; }
+    if(q){ const hay=searchKey(r.m+" "+r.n+" "+(r.memo||"")+" "+lookupEngine(r.n)); if(!hay.includes(q)) return false; }
     return true;
   });
   // sort: maker order, then name
