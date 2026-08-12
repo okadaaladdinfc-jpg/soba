@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>配車管理システム｜野田ヤード v10.8</title>
+<title>配車管理システム｜野田ヤード v10.9</title>
 <style>
 :root{--p:#1a4f8b;--pl:#2563b0;--ac:#e8750a;--ok:#16a34a;--wn:#d97706;--ng:#dc2626;
 --bg:#f0f4f8;--card:#fff;--bd:#d1d9e0;--tx:#1e293b;--mu:#64748b;
@@ -167,8 +167,8 @@ tr:hover td{background:#f8fafc;}
 <header>
   <h1>🚛 配車管理システム</h1>
   <div class="dbadge" id="hdrDate"></div>
-  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v10.8</span>
-  <span style="font-size:11px;opacity:.7;">更新: 2026/07/25 v10.8</span>
+  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v10.9</span>
+  <span style="font-size:11px;opacity:.7;">更新: 2026/08/12 v10.9</span>
   <span id="syncBadge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.18);">…</span>
   <span style="display:flex;gap:6px;margin-left:auto;align-items:center;">
     <button class="btn btn-o btn-sm" onclick="setApiUrl()" title="クラウド共有のURL設定（GASのウェブアプリ exec URL）。空欄で共有オフ">⚙ 共有設定</button>
@@ -1844,7 +1844,15 @@ function delTr(id){if(!confirm('削除しますか？'))return;S.trucks=S.trucks
 
 // ─── Time utils ───
 function toMin(hhmm){if(!hhmm)return null;const[h,m]=hhmm.split(':').map(Number);return h*60+m;}
-function parseTimeRange(s){if(!s)return{tFrom:0,tTo:0};const p=s.split(/[〜～]/);return{tFrom:toMin(p[0]?.trim())||0,tTo:toMin(p[1]?.trim())||0};}
+function parseTimeRange(s){
+  if(!s)return{tFrom:0,tTo:0};
+  const p=s.split(/[〜～]/);
+  const tFrom=toMin(p[0]?.trim())||0, tTo=toMin(p[1]?.trim())||0;
+  // ★v10.9: 終了<開始の不正な窓（例「9:15〜5:00」＝入力ミス or 翌日跨ぎ）は締切なしとして扱う。
+  //   そのまま使うと「常に間に合わない」と誤判定され、割当解除・警告が誤発火するため。
+  if(tFrom>0&&tTo>0&&tTo<tFrom)return{tFrom,tTo:0,badRange:true};
+  return{tFrom,tTo};
+}
 // time指定案件の実効スロット判定: tFrom>=13→pm / tTo>=15→''（終日） / else→am
 function getEffectiveSlot(job){
   if(job.timeSlot==='am')return'am';
@@ -3906,6 +3914,9 @@ function _genPlanCore(){
       warns.push({lv:'wn',msg:`${job.vehicle}（駅遠い）→ ${r.drv.name} 自走担当。バスの時刻を確認してください（徒歩30分まで可）`});
   }));
   if(S.jobs.some(j=>!j.travel))warns.push({lv:'wn',msg:'移動時間が未入力の案件あり。タイムラインは不正確になります。'});
+  // ★v10.9: 時間指定の入力エラー検知（終了が開始より前 = 「9:15〜5:00」等）→ 締切なし扱いで運用するが要修正
+  S.jobs.filter(j=>j.timeSlot==='time'&&j.time&&parseTimeRange(j.time).badRange)
+    .forEach(j=>warns.push({lv:'wn',msg:`⚠【時間指定の入力エラー】${j.vehicle}（${j.pc||j.pp}）「${j.time}」：終了時刻が開始より前です。締切なしとして配車しました。案件データの時間を修正してください`}));
 
   // ── 積み順統一（全トリップ：通常便+仮ナンバーoverflow含む）──
   // ルール：野田を起点に遠い方を先に積んで帰り道で近い方を積む
@@ -4186,7 +4197,8 @@ function _genPlanCore(){
       const truck=r.truck, drv=r.drv;
       const okBase=j=>!isTanpatsu(j)&&!(j.isMT&&drv.atOnly)&&(!truck||checkCompat(truck,j).ok);
       // (a) AM先行便の挿入（既存便に時間制約が無い場合のみ＝順序入替が安全）
-      if(r.trips[0].jobs.every(j=>getEffectiveSlot(j)!=='am'&&!(j.timeSlot==='time'&&j.time))){
+      //   ★v10.9: 遠方(≥90分)を含む便は前挿入しない（遠方は朝イチ固定＝本郷ルール）
+      if(r.trips[0].jobs.every(j=>getEffectiveSlot(j)!=='am'&&!(j.timeSlot==='time'&&j.time)&&estimateTravel(j)<90)){
         const amIdx=unassT.findIndex(j=>okBase(j)&&getEffectiveSlot(j)==='am'&&estimateTravel(j)<=90);
         if(amIdx>=0){
           const j1=unassT.splice(amIdx,1)[0];
@@ -4408,6 +4420,9 @@ function _genPlanCore(){
     //   ＋関数化して自走の割当解除後にも再実行（window._tryFrontloadAMに保持）
     const _shiftable=j=>{
       if(getEffectiveSlot(j)==='am')return false;
+      // ★v10.9: 遠方(≥90分)は1便目固定＝後ろへずらさない（本郷ルール「1便目=遠方」。
+      //   ずらすと帰社が大幅に遅れる。実例: 本郷の長野210分+飯山180分が2便目に押され終了22:00になった）
+      if(estimateTravel(j)>=90)return false;
       if(j.timeSlot==='time'&&j.time){
         const{tFrom,tTo}=parseTimeRange(j.time);
         if((tFrom||0)>=780)return true;        // 午後開始の窓は後ろにずらしてOK
