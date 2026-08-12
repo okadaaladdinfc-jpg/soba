@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>配車管理システム｜野田ヤード v10.9</title>
+<title>配車管理システム｜野田ヤード v11.0</title>
 <style>
 :root{--p:#1a4f8b;--pl:#2563b0;--ac:#e8750a;--ok:#16a34a;--wn:#d97706;--ng:#dc2626;
 --bg:#f0f4f8;--card:#fff;--bd:#d1d9e0;--tx:#1e293b;--mu:#64748b;
@@ -167,8 +167,8 @@ tr:hover td{background:#f8fafc;}
 <header>
   <h1>🚛 配車管理システム</h1>
   <div class="dbadge" id="hdrDate"></div>
-  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v10.9</span>
-  <span style="font-size:11px;opacity:.7;">更新: 2026/08/12 v10.9</span>
+  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v11.0</span>
+  <span style="font-size:11px;opacity:.7;">更新: 2026/08/12 v11.0</span>
   <span id="syncBadge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.18);">…</span>
   <span style="display:flex;gap:6px;margin-left:auto;align-items:center;">
     <button class="btn btn-o btn-sm" onclick="setApiUrl()" title="クラウド共有のURL設定（GASのウェブアプリ exec URL）。空欄で共有オフ">⚙ 共有設定</button>
@@ -949,7 +949,16 @@ function renderJobs(){
 }
 // 単発判定
 const TRUCK_VEH=/キャンター|ダイナ|デュトロ|エルフ|トヨエース|ファイター|フォワード|レンジャー|プロフィア|コンドル|タイタン|トラック|ダンプ|ユニック/;
-const FAR_PREF_DRIVERS=['本郷','篠端']; // ★v9.8: 現場ルール — 遠方を優先的に割り当てるドライバー（本郷=1便目遠方・2便目近場／篠端=なるべく遠方）
+const FAR_PREF_DRIVERS=['本郷','篠端']; // ★v9.8: 現場ルール — 遠方を優先的に割り当てるドライバー（本郷=1便目遠方・2便目超近場／篠端=なるべく遠方）
+// ★v11.0: 2便目は超近場のみ＝終業(retBy)に確実に間に合わせるドライバー（現場ルール: 本郷は17時終了）
+const NEAR2ND_DRIVERS=['本郷'];
+const SUPER_NEAR_MIN=30; // 超近場のしきい値（分）
+// ★v11.0: ドライバーの終業時刻（retBy「17:00」等が設定されていればそれを使う。未設定は既定=21時）
+//   これまでretByはデータとして保存されるだけでエンジンが未参照だった（形骸化）→ここで有効化
+function drvEOD(d,defEOD){
+  const t=d&&d.retBy?toMin(d.retBy):0;
+  return (t&&t>0)?t:defEOD;
+}
 function isTanpatsu(j){
   // 「単発」テキストは1回限り契約の意味のみ（ペアリングに影響させない）
   // ハイエース/キャラバン（高屋根）・キャリア付・トラック系車両が物理的に単独ロード対象
@@ -2290,7 +2299,7 @@ function _genPlanCore(){
     const EOD_P0=21*60;
     function canFinishByEOD_P0(d,job){
       const t=estimateTravel(job),start=drvDone.get(d.id)||tgt,buf=SPEED_BUF[d.speed]||10;
-      return (start+t+pkDur+t+ulDur+buf)<=EOD_P0;
+      return (start+t+pkDur+t+ulDur+buf)<=drvEOD(d,EOD_P0);
     }
     // 遠方・AM案件（PM指定除く）を最遠順に並べる
     // ★Fix A: travel==farTh(境界値=神奈川90min等)を除外。
@@ -2411,7 +2420,7 @@ function _genPlanCore(){
       const t=estimateTravel(job);
       const start=drvDone.get(d.id)||tgt;
       const buf=SPEED_BUF[d.speed]||10;
-      return (start+t+pkDur+t+ulDur+buf)<=EOD;
+      return (start+t+pkDur+t+ulDur+buf)<=drvEOD(d,EOD);
     }
 
     // [役割1] 時間指定チェック担当
@@ -2451,6 +2460,9 @@ function _genPlanCore(){
       const mid=isMidJob(job);
       const farLimit=1; // 遠方は①②（trip1の2台）まで（全ドライバー統一）
       if(far&&cur>=farLimit) return `【遠方配備NG】遠方は①②（1便目）まで（現在${cur+1}便目）`;
+      // ★v11.0: 本郷ルール更新 — 2便目以降は超近場(30分以内)のみ（17時終業を確実にするため）
+      if(NEAR2ND_DRIVERS.includes(d.name)&&cur>=1&&estimateTravel(job)>SUPER_NEAR_MIN)
+        return `【本郷ルールNG】2便目以降は超近場(${SUPER_NEAR_MIN}分以内)のみ（${estimateTravel(job)}分）`;
       if(d.mornFar&&cur>=2&&estimateTravel(job)>50) return `【本郷ルールNG】③④は50分以内のみ（${estimateTravel(job)}分）`;
       if(near&&cur<ms){
         const farLeft=truckJobs.some(j=>!assignedT.has(j.id)&&j.id!==job.id&&isFarJob(j)&&getEffectiveSlot(j)!=='pm'&&canAssign(d,getTruck(d),j));
@@ -2527,6 +2539,7 @@ function _genPlanCore(){
       const farLimit=1;
       if(far&&cur>=farLimit) return false;                // 遠方はtrip1のみ（★維持）
       if(d.mornFar&&cur>=ms&&!isNearJob(job)) return false;  // mornFar午後は近場のみ
+      if(NEAR2ND_DRIVERS.includes(d.name)&&cur>=1&&estimateTravel(job)>SUPER_NEAR_MIN) return false; // ★v11.0: 2便目以降は超近場のみ
       if(d.mornFar&&cur>=2&&estimateTravel(job)>50) return false; // 本郷ルール
       return true;
     }
@@ -3064,8 +3077,9 @@ function _genPlanCore(){
         if(isFarJob(j)) return false;
         if(isTanpatsu(j)&&j.isKari) return false; // ★v10.3: 単発車両×仮ナンバー(キャンター等)は自走優先(R-TK)。2便確保で先取りしない
         if(d.mornFar&&!isNearJob(j)) return false;
+        if(NEAR2ND_DRIVERS.includes(d.name)&&estimateTravel(j)>SUPER_NEAR_MIN) return false; // ★v11.0: 2便目以降は超近場のみ
         const _t=estimateTravel(j);
-        if((_sS2+_t+pkDur+_t+ulDur+_bufS2)>(21*60)) return false;
+        if((_sS2+_t+pkDur+_t+ulDur+_bufS2)>drvEOD(d,21*60)) return false;
         // AM指定：出発から正午前着確認
         if(getEffectiveSlot(j)==='am'&&_sS2+_t>12*60) return false;
         return true;
@@ -3096,7 +3110,7 @@ function _genPlanCore(){
         if(estimateTravel(j)>60&&isOppositeDir(candDir,getDir(j.pp,j.pc))) return false;
         // EOD（maxT使用）
         const maxT2=Math.max(candT,estimateTravel(j));
-        return (_sS2+2*maxT2+2*pkDur+ulDur+_bufS2)<=(21*60);
+        return (_sS2+2*maxT2+2*pkDur+ulDur+_bufS2)<=drvEOD(d,21*60);
       }).sort((a,b)=>{
         // AM同士優先
         const aAM=(getEffectiveSlot(a)==='am'&&candSlot==='am')?1:0;
@@ -3155,7 +3169,7 @@ function _genPlanCore(){
         if(isTanpatsu(j)&&j.isKari) return false; // ★v10.3: 単発車両×仮ナンバーは自走優先(R-TK)
         if(d.mornFar&&!isNearJob(j)) return false;
         const _t=estimateTravel(j);
-        if((_sS2b+_t+pkDur+_t+ulDur+_bufS2b)>(21*60)) return false;
+        if((_sS2b+_t+pkDur+_t+ulDur+_bufS2b)>drvEOD(d,21*60)) return false;
         if(getEffectiveSlot(j)==='am'&&_sS2b+_t>12*60) return false;
         return true;
       });
@@ -3299,7 +3313,7 @@ function _genPlanCore(){
         const _spd={very_fast:0,fast:0,standard:1,'':1,slow:2,very_slow:3};
         cands=truckDrvs.filter(dd=>!dd.mornFar
           &&!((dd.speed==='slow'||dd.speed==='very_slow')&&drvTrips.get(dd.id)>=2&&(estimateTravel(j1)>30||(j2&&estimateTravel(j2)>30))) // ★v6.5: 遅いドライバーの3便目は超近場のみ
-          &&(drvDone.get(dd.id)||tgt)+_cost<=20*60)
+          &&(drvDone.get(dd.id)||tgt)+_cost<=drvEOD(dd,20*60)) // ★v11.0: retBy（帰社時刻）を尊重
           .sort((a,b)=>{
             // ★v6.4: 遠方・中距離は速いドライバー優先
             if(!isNearJob(j1)&&(_spd[a.speed]??1)!==(_spd[b.speed]??1))return(_spd[a.speed]??1)-(_spd[b.speed]??1);
@@ -3582,7 +3596,7 @@ function _genPlanCore(){
           {
             const _j1t=estimateTravel(_t1),_kt=estimateTravel(kj);
             const _inc=2*Math.max(0,_kt-_j1t)+pkDur;
-            if(((drvDone.get(r.drv.id)||tgt)+_inc)>(21*60))continue;
+            if(((drvDone.get(r.drv.id)||tgt)+_inc)>drvEOD(r.drv,21*60))continue;
           }
           if(getEffectiveSlot(kj)==='am'&&ti>0)continue;
           foundTrip=t;break outer;
@@ -4667,12 +4681,80 @@ function _genPlanCore(){
       warns.push({lv:'wn',msg:`🚉【相乗り解除】${jr.drv.name}：相乗り先トラックの行き先が変わったため電車移動に変更（相乗りは同一市区町村への現地相乗りのみ）`});
     }
   });
-  // ★v9.8: 本郷ルール — 1便目=遠方・2便目=近場。2便目以降に中距離(60〜150分)がある場合は本人確認が必要
-  truckRoutes.filter(r=>r.drv.name==='本郷').forEach(r=>{
-    r.trips.forEach(t=>{
-      if(t.n>=2&&t.jobs.some(j=>{const tv=estimateTravel(j);return tv>60&&tv<150;}))
-        warns.push({lv:'wn',msg:`⚠【本郷ルール】本郷${t.n}便に中距離案件（${t.jobs.filter(j=>{const tv=estimateTravel(j);return tv>60&&tv<150;}).map(j=>`${j.vehicle}@${j.pc||j.pp}`).join('、')}）：2便目は近場が原則。中距離になる場合は事前に本人確認してください`});
+  // ★v11.0: 本郷ルール最終ガード — どの経路（同一市集約/統合/補充等）で積まれても、
+  //   2便目以降の超近場外(>30分)は取り除き、他ドライバーへ移送。移せなければ未割当へ。
+  {
+    const _tryPut=(route,trip,job)=>{ // 追加→仮スケジュール→時間窓/AM/終業を検証→NGなら巻き戻し
+      const old=route.daySchedule;
+      trip.jobs.push(job);
+      const ns=calcDaySched(route.trips,route.drv,cfg);
+      let ok=true;
+      route.trips.forEach((t2,ti)=>t2.jobs.forEach((j2,ji)=>{
+        if(!ok)return;
+        const arr=ns?.[ti]?.arrJ?.[ji];
+        if(arr==null)return;
+        if(getEffectiveSlot(j2)==='am'&&arr>720)ok=false;
+        else if(j2.timeSlot==='time'&&j2.time){const{tTo}=parseTimeRange(j2.time);if(tTo>0&&arr>tTo)ok=false;}
+      }));
+      if(ok&&ns&&ns.length&&ns[ns.length-1].done>drvEOD(route.drv,21*60))ok=false;
+      if(ok){route.daySchedule=ns;return true;}
+      trip.jobs.pop();route.daySchedule=old;return false;
+    };
+    truckRoutes.filter(r=>NEAR2ND_DRIVERS.includes(r.drv.name)).forEach(r=>{
+      let touched=false;
+      r.trips.forEach(t=>{
+        if(t.n<2)return;
+        for(let ji=t.jobs.length-1;ji>=0;ji--){
+          const j=t.jobs[ji];
+          if(estimateTravel(j)<=SUPER_NEAR_MIN)continue;
+          t.jobs.splice(ji,1);assignedT.delete(j.id);touched=true;
+          let moved=null;
+          for(const r2 of truckRoutes){
+            if(moved)break;
+            if(r2===r||!r2.trips.length)continue;
+            if(j.isMT&&r2.drv.atOnly)continue;
+            if(r2.truck&&!checkCompat(r2.truck,j).ok)continue;
+            if(NEAR2ND_DRIVERS.includes(r2.drv.name))continue;
+            for(const t2 of r2.trips){
+              if(t2.jobs.length!==1||isTanpatsu(t2.jobs[0])||isTanpatsu(j))continue;
+              if(!pairDirOK(t2.jobs[0],j)||!pairWOK(r2.truck,t2.jobs[0],j))continue;
+              if((j.isLo||j.isHiRoof)&&(t2.jobs[0].isLo||t2.jobs[0].isHiRoof))continue;
+              if(getEffectiveSlot(j)==='am'&&t2.n>1)continue;
+              if(_tryPut(r2,t2,j)){moved={r2,t2};break;}
+            }
+          }
+          if(moved){
+            assignedT.add(j.id);
+            warns.push({lv:'wn',msg:`🏠【本郷ルール・移送】${j.vehicle}（${j.pc||j.pp}・${estimateTravel(j)}分）を${r.drv.name}${t.n}便から${moved.r2.drv.name}${moved.t2.n}便へ（2便目以降は${SUPER_NEAR_MIN}分以内のみ）`});
+          }else{
+            if(!unassT.includes(j))unassT.push(j);
+            warns.push({lv:'er',msg:`🔴【本郷ルール・割当解除】${j.vehicle}（${j.pc||j.pp}・${estimateTravel(j)}分）を${r.drv.name}${t.n}便から外しました：2便目以降は${SUPER_NEAR_MIN}分以内のみ（17時終業）。手動で他ドライバーへ割当してください`});
+          }
+        }
+      });
+      if(touched){
+        r.trips=r.trips.filter(t=>t.jobs.length>0);
+        r.trips.forEach((tt,ii)=>tt.n=ii+1);
+        drvTrips.set(r.drv.id,r.trips.length);
+        r.daySchedule=calcDaySched(r.trips,r.drv,cfg);
+      }
     });
+  }
+
+  // ★v11.0: 本郷ルール（更新版）— 1便目=遠方・2便目以降=超近場(30分以内)。終業(retBy)超過も警告
+  truckRoutes.filter(r=>NEAR2ND_DRIVERS.includes(r.drv.name)).forEach(r=>{
+    r.trips.forEach(t=>{
+      const over=t.jobs.filter(j=>estimateTravel(j)>SUPER_NEAR_MIN);
+      if(t.n>=2&&over.length)
+        warns.push({lv:'wn',msg:`⚠【本郷ルール】${r.drv.name}${t.n}便に超近場外の案件（${over.map(j=>`${j.vehicle}@${j.pc||j.pp}(${estimateTravel(j)}分)`).join('、')}）：2便目以降は${SUPER_NEAR_MIN}分以内が原則。事前に本人確認してください`});
+    });
+  });
+  // ★v11.0: 終業(retBy)超過の警告 — 全ドライバー対象（retByは従来エンジン未参照で形骸化していた）
+  truckRoutes.forEach(r=>{
+    const _end=r.daySchedule&&r.daySchedule.length?r.daySchedule[r.daySchedule.length-1].done:null;
+    const _lim=r.drv.retBy?toMin(r.drv.retBy):0;
+    if(_end!=null&&_lim>0&&_end>_lim)
+      warns.push({lv:'er',msg:`🔴【終業超過】${r.drv.name}：終了予定${toHM(_end)}が帰社設定${r.drv.retBy}を超えています。便を減らすか他ドライバーへ振り替えてください`});
   });
   // ★v9.8: ヘルプ時間の整合警告 — 自走Dは自分の自走車を引き上げてから牽引車でヘルプに向かうため、午前系ヘルプは時間要確認
   jisoRoutes.forEach(jr=>{
