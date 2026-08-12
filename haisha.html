@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>配車管理システム｜野田ヤード v11.0</title>
+<title>配車管理システム｜野田ヤード v11.1</title>
 <style>
 :root{--p:#1a4f8b;--pl:#2563b0;--ac:#e8750a;--ok:#16a34a;--wn:#d97706;--ng:#dc2626;
 --bg:#f0f4f8;--card:#fff;--bd:#d1d9e0;--tx:#1e293b;--mu:#64748b;
@@ -167,8 +167,8 @@ tr:hover td{background:#f8fafc;}
 <header>
   <h1>🚛 配車管理システム</h1>
   <div class="dbadge" id="hdrDate"></div>
-  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v11.0</span>
-  <span style="font-size:11px;opacity:.7;">更新: 2026/08/12 v11.0</span>
+  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v11.1</span>
+  <span style="font-size:11px;opacity:.7;">更新: 2026/08/12 v11.1</span>
   <span id="syncBadge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.18);">…</span>
   <span style="display:flex;gap:6px;margin-left:auto;align-items:center;">
     <button class="btn btn-o btn-sm" onclick="setApiUrl()" title="クラウド共有のURL設定（GASのウェブアプリ exec URL）。空欄で共有オフ">⚙ 共有設定</button>
@@ -953,11 +953,19 @@ const FAR_PREF_DRIVERS=['本郷','篠端']; // ★v9.8: 現場ルール — 遠�
 // ★v11.0: 2便目は超近場のみ＝終業(retBy)に確実に間に合わせるドライバー（現場ルール: 本郷は17時終了）
 const NEAR2ND_DRIVERS=['本郷'];
 const SUPER_NEAR_MIN=30; // 超近場のしきい値（分）
-// ★v11.0: ドライバーの終業時刻（retBy「17:00」等が設定されていればそれを使う。未設定は既定=21時）
-//   これまでretByはデータとして保存されるだけでエンジンが未参照だった（形骸化）→ここで有効化
+// ★v11.1: 終業時刻ポリシー（現場ルール 2026-08-12）
+//   ・全ドライバー共通の絶対上限 = 21:00（これ以降の帰社は禁止）
+//   ・残業削減の重点対象4名（本郷・西川・斉藤・中村）= 18:00 着を目標
+//   ・本郷はさらに厳しく 17:00（スタッフ設定の retBy を使用）
+//   retByは従来エンジン未参照で形骸化していた（v11.0で有効化）
+const HARD_EOD=21*60;            // 21時以降は禁止（全員）
+const OT_TARGET_DRIVERS=['本郷','西川','斉藤','中村']; // 残業削減の重点対象4名
+const OT_TARGET_END=18*60;       // 重点対象の目標帰社時刻 18:00
 function drvEOD(d,defEOD){
-  const t=d&&d.retBy?toMin(d.retBy):0;
-  return (t&&t>0)?t:defEOD;
+  let lim=Math.min(defEOD||HARD_EOD,HARD_EOD);
+  if(d&&d.retBy){const t=toMin(d.retBy);if(t>0)lim=Math.min(lim,t);}          // 個別設定（本郷17:00等）
+  if(d&&OT_TARGET_DRIVERS.includes(d.name))lim=Math.min(lim,OT_TARGET_END);  // 重点対象は18時目標
+  return lim;
 }
 function isTanpatsu(j){
   // 「単発」テキストは1回限り契約の意味のみ（ペアリングに影響させない）
@@ -4749,12 +4757,18 @@ function _genPlanCore(){
         warns.push({lv:'wn',msg:`⚠【本郷ルール】${r.drv.name}${t.n}便に超近場外の案件（${over.map(j=>`${j.vehicle}@${j.pc||j.pp}(${estimateTravel(j)}分)`).join('、')}）：2便目以降は${SUPER_NEAR_MIN}分以内が原則。事前に本人確認してください`});
     });
   });
-  // ★v11.0: 終業(retBy)超過の警告 — 全ドライバー対象（retByは従来エンジン未参照で形骸化していた）
+  // ★v11.1: 終業時刻の検証 — ①21時超=🔴禁止 ②重点対象4名の18時超=🔴 ③個別retBy超=🔴
   truckRoutes.forEach(r=>{
     const _end=r.daySchedule&&r.daySchedule.length?r.daySchedule[r.daySchedule.length-1].done:null;
+    if(_end==null)return;
+    if(_end>HARD_EOD){
+      warns.push({lv:'er',msg:`🔴【21時超過・禁止】${r.drv.name}：終了予定${toHM(_end)}。21時以降の帰社は禁止です。便を減らすか他ドライバーへ振り替えてください`});
+    }else if(OT_TARGET_DRIVERS.includes(r.drv.name)&&_end>OT_TARGET_END){
+      warns.push({lv:'er',msg:`🔴【残業削減対象・18時超過】${r.drv.name}：終了予定${toHM(_end)}（目標18:00）。便を減らすか他ドライバーへ振り替えてください`});
+    }
     const _lim=r.drv.retBy?toMin(r.drv.retBy):0;
-    if(_end!=null&&_lim>0&&_end>_lim)
-      warns.push({lv:'er',msg:`🔴【終業超過】${r.drv.name}：終了予定${toHM(_end)}が帰社設定${r.drv.retBy}を超えています。便を減らすか他ドライバーへ振り替えてください`});
+    if(_lim>0&&_end>_lim)
+      warns.push({lv:'er',msg:`🔴【終業超過】${r.drv.name}：終了予定${toHM(_end)}が帰社設定${r.drv.retBy}を超えています`});
   });
   // ★v9.8: ヘルプ時間の整合警告 — 自走Dは自分の自走車を引き上げてから牽引車でヘルプに向かうため、午前系ヘルプは時間要確認
   jisoRoutes.forEach(jr=>{
