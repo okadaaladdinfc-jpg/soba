@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>相場表アプリ v2.7（野田ヤード）</title>
+<title>相場表アプリ v2.8（野田ヤード）</title>
 <style>
   :root{
     --bg:#0f1115; --panel:#1a1d24; --panel2:#222631; --line:#2c313c;
@@ -70,7 +70,7 @@
 </head>
 <body>
 <header>
-  <div class="title">📈 相場表アプリ <small>野田ヤード / v2.7（更新日を保存時に自動更新）</small></div>
+  <div class="title">📈 相場表アプリ <small>野田ヤード / v2.8（車齢区分に西暦/和暦を明示）</small></div>
   <div class="toolbar">
     <input id="q" class="search" placeholder="車種・型式で検索（例: アルファード MNH15 / セレナ C26）">
     <button class="btn" id="micBtn" title="音声で車種検索">🎤</button>
@@ -163,8 +163,8 @@
       <div class="field"><label>車齢区分</label>
         <select id="txAge">
           <option value="u13">13年未満（標準）</option>
-          <option value="o13">13年経過</option>
-          <option value="o18">18年経過</option>
+          <option value="o13" id="opt13">13年経過</option>
+          <option value="o18" id="opt18">18年経過</option>
           <option value="eco">エコカー（本則）</option>
         </select></div>
       <div class="field"><label>手続き調整（月）<span class="dim">／1か月半=−1</span></label><input id="txLag" type="number" value="1"></div>
@@ -741,6 +741,14 @@ function isEco(name){
   return /HV|ＨＶ|ハイブリッド|プリウス|アクア|リーフ|インサイト|SAI/.test(name);
 }
 function yen(n){ return "¥"+Number(n).toLocaleString("ja-JP"); }
+// 車齢区分の選択肢に「初度登録◯年以前が対象」を和暦/西暦で動的表示
+function updateAgeLabels(){
+  const y=new Date().getFullYear();
+  const y13=y-13, y18=y-18;
+  const o13=document.getElementById("opt13"), o18=document.getElementById("opt18");
+  if(o13) o13.textContent = `13年経過（${wareki(y13)}年/${y13}年 以前）`;
+  if(o18) o18.textContent = `18年経過（${wareki(y18)}年/${y18}年 以前）`;
+}
 function recalcTax(){
   const ry=parseInt(document.getElementById("txRY").value,10);
   const rm=parseInt(document.getElementById("txRM").value,10);
@@ -838,7 +846,7 @@ document.getElementById("taxOverlay").onclick=(e)=>{ if(e.target.id==="taxOverla
 document.getElementById("syncBtn").onclick=syncPull;
 document.getElementById("cfgBtn").onclick=configSync;
 
-buildChips(); render();
+buildChips(); render(); updateAgeLabels();
 if(API()) syncPull(); else setStatus("同期オフ（ローカル保存）");
 </script>
 </body>
