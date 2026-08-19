@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>相場表アプリ v2.8（野田ヤード）</title>
+<title>相場表アプリ v2.9（野田ヤード）</title>
 <style>
   :root{
     --bg:#0f1115; --panel:#1a1d24; --panel2:#222631; --line:#2c313c;
@@ -66,11 +66,45 @@
   .empty{text-align:center;color:var(--muted);padding:40px}
   @media(min-width:700px){ .overlay{align-items:center} .sheet{border-radius:16px} }
   .hidden{display:none}
+
+  /* ===== スマホ向けレイアウト（768px未満はカード表示） ===== */
+  @media(max-width:767px){
+    body{font-size:14px}
+    header{padding:8px 10px}
+    .title{font-size:15px;gap:6px;flex-wrap:wrap}
+    .title small{font-size:10px;flex-basis:100%}
+    .toolbar{gap:6px;margin-top:6px}
+    .search{padding:8px 10px;font-size:14px;min-width:0}
+    #micBtn{padding:8px 10px}
+    .btn{padding:7px 9px;font-size:12px}
+    .awtoggle button{padding:7px 9px;font-size:12px}
+    .chips{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px;margin:8px -10px 0;padding-left:10px;padding-right:10px}
+    .chips::-webkit-scrollbar{height:4px}
+    .chip{flex:0 0 auto}
+    main{padding:8px 8px 80px}
+    .meta{font-size:11px}
+    table{display:block}
+    thead{display:none}
+    tbody{display:block}
+    tr.row{display:block;border:1px solid var(--line);border-radius:12px;margin-bottom:10px;padding:12px;background:var(--panel);border-bottom:1px solid var(--line)}
+    tr.row.recent{border-color:#7f1d1d}
+    td{display:block;padding:0;border:0}
+    .mcell-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px}
+    .mcell-prices{display:flex;gap:18px;align-items:baseline;margin-bottom:8px;flex-wrap:wrap}
+    .mcell-prices .pgroup{display:flex;flex-direction:column;gap:1px}
+    .mcell-prices .plabel{font-size:10px;color:var(--muted)}
+    .mcell-facts{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--txt);border-top:1px solid var(--line);padding-top:8px;margin-top:2px}
+    .mcell-facts .fitem{display:flex;flex-direction:column;gap:1px;min-width:64px}
+    .mcell-facts .flabel{font-size:10px;color:var(--muted)}
+    .mcell-links{display:flex;gap:14px;margin-top:8px}
+    .mcell-date{font-size:11px;color:var(--muted);margin-top:6px}
+    .empty{padding:60px 20px}
+  }
 </style>
 </head>
 <body>
 <header>
-  <div class="title">📈 相場表アプリ <small>野田ヤード / v2.8（車齢区分に西暦/和暦を明示）</small></div>
+  <div class="title">📈 相場表アプリ <small>野田ヤード / v2.9（スマホ向けカード表示）</small></div>
   <div class="toolbar">
     <input id="q" class="search" placeholder="車種・型式で検索（例: アルファード MNH15 / セレナ C26）">
     <button class="btn" id="micBtn" title="音声で車種検索">🎤</button>
@@ -538,6 +572,7 @@ function render(){
     return a.n.localeCompare(b.n,"ja");
   });
   document.getElementById("meta").textContent = `${list.length}件表示 / 全${DATA.length}件　（価格は1000円単位＝140は14万円）`;
+  const mobile = window.matchMedia("(max-width:767px)").matches;
   tb.innerHTML = list.map(r=>{
     const recent = isRecent(r.d);
     const negin = r.g ? (r.g==="不可"?'<span class="badge ng">ネギン不可</span>':`<span class="negin">${r.g}</span>`) : '<span class="dim">—</span>';
@@ -546,20 +581,46 @@ function render(){
     const wt=lookupWeight(r.n);
     const docOff=/#書OFF/.test(r.memo||"");
     const memoDisp=(r.memo||"").replace(/\s*#書OFF/g,"").trim();
+    const docBadge=(/書/.test(r.n)&&!docOff&&!String(r.aw).includes('書'))?' <span class="badge doc" title="車検書類付（車名に書付き表記）">書</span>':'';
+    const eng=lookupEngine(r.n), cc=lookupCC(r.n);
+    const engHtml=eng?('<span class="englink" data-eng="'+eng+'" title="同じエンジンの車種を表示">'+eng+'</span>'):'<span class="dim">—</span>';
+    const yearHtml=r.y?(r.y+'<br><span style="opacity:.8">'+toWareki(r.y)+'</span>'):'<span class="dim">—</span>';
+    const weightHtml=wt?wt+'<small style="color:var(--muted)">kg</small>':'<span class="dim">—</span>';
+    const linksHtml=`<a class="goo" href="${gooUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔎年式</a>
+        <a class="goo" href="${gooWtUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="margin-left:10px">🔎重量</a>
+        <a class="goo taxlink" data-wt="${wt}" data-name="${(r.n||'').replace(/"/g,'&quot;')}" data-maker="${r.m}" style="margin-left:10px;cursor:pointer">🧮還付</a>`;
+
+    if(mobile){
+      return `<tr class="row ${recent?'recent':''}" data-id="${r.id}"><td>
+        <div class="mcell-head"><div>
+          <div class="maker">${r.m}</div>
+          <div class="model">${r.n}${recent?' <span class="badge new">NEW</span>':''}</div>
+        </div></div>
+        ${memoDisp?`<div class="memo">📝 ${memoDisp}</div>`:''}
+        <div class="mcell-prices">
+          <div class="pgroup"><span class="plabel">AW${awMode===1?'★':''}</span>${priceCell(r.aw, awMode===1, docOff)}${docBadge}</div>
+          <div class="pgroup"><span class="plabel">レス${awMode===0?'★':''}</span>${priceCell(r.l, awMode===0, docOff)}</div>
+          <div class="pgroup"><span class="plabel">ネギン</span>${negin}</div>
+        </div>
+        <div class="mcell-facts">
+          <div class="fitem"><span class="flabel">年式</span>${yearHtml}</div>
+          <div class="fitem"><span class="flabel">車両重量</span>${weightHtml}</div>
+          <div class="fitem"><span class="flabel">エンジン</span>${engHtml}${cc?('<br><span style="opacity:.8">'+cc.toLocaleString()+'cc</span>'):''}</div>
+        </div>
+        <div class="mcell-links">${linksHtml}</div>
+        <div class="mcell-date">更新日: ${r.d||'—'}</div>
+      </td></tr>`;
+    }
     return `<tr class="row ${recent?'recent':''}" data-id="${r.id}">
       <td><div class="maker">${r.m}</div><div class="model">${r.n}${recent?' <span class="badge new">NEW</span>':''}</div>
         ${memoDisp?`<div class="memo">📝 ${memoDisp}</div>`:''}
-        <div><a class="goo" href="${gooUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔎年式</a>
-        <a class="goo" href="${gooWtUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="margin-left:10px">🔎重量</a>
-        <a class="goo taxlink" data-wt="${wt}" data-name="${(r.n||'').replace(/"/g,'&quot;')}" data-maker="${r.m}" style="margin-left:10px;cursor:pointer">🧮還付</a></div></td>
-      <td>${priceCell(r.aw, awMode===1, docOff)}${(/書/.test(r.n)&&!docOff&&!String(r.aw).includes('書'))?' <span class="badge doc" title="車検書類付（車名に書付き表記）">書</span>':''}</td>
+        <div>${linksHtml}</div></td>
+      <td>${priceCell(r.aw, awMode===1, docOff)}${docBadge}</td>
       <td>${priceCell(r.l, awMode===0, docOff)}</td>
       <td>${negin}</td>
-      <td class="cell-lg">${r.y?(r.y+'<br><span style="opacity:.8">'+toWareki(r.y)+'</span>'):'<span class="dim">—</span>'}</td>
-      <td class="cell-lg">${wt?wt+'<small style="color:var(--muted)">kg</small>':'<span class="dim">—</span>'}</td>
-      <td class="cell-lg">${(function(){const e=lookupEngine(r.n);const cc=lookupCC(r.n);
-        const eh=e?('<span class="englink" data-eng="'+e+'" title="同じエンジンの車種を表示">'+e+'</span>'):'<span class="dim">—</span>';
-        return eh+(cc?('<br><span style="opacity:.8">'+cc.toLocaleString()+'cc</span>'):'');})()}</td>
+      <td class="cell-lg">${yearHtml}</td>
+      <td class="cell-lg">${weightHtml}</td>
+      <td class="cell-lg">${engHtml}${cc?('<br><span style="opacity:.8">'+cc.toLocaleString()+'cc</span>'):''}</td>
       <td class="dim" style="font-size:12px">${r.d||'—'}</td>
     </tr>`;
   }).join("");
@@ -647,6 +708,12 @@ document.getElementById("awToggle").querySelectorAll("button").forEach(b=>{
   };
 });
 document.getElementById("q").oninput=render;
+// 画面回転・リサイズでモバイル/PC表示のしきい値をまたいだら再描画
+let _wasMobile=window.matchMedia("(max-width:767px)").matches;
+window.addEventListener("resize",()=>{
+  const nowMobile=window.matchMedia("(max-width:767px)").matches;
+  if(nowMobile!==_wasMobile){ _wasMobile=nowMobile; render(); }
+});
 
 // CSV
 function toCSV(){
