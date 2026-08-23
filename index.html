@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>相場表アプリ v2.9（野田ヤード）</title>
+<title>相場表アプリ v3.0（野田ヤード）</title>
 <style>
   :root{
     --bg:#0f1115; --panel:#1a1d24; --panel2:#222631; --line:#2c313c;
@@ -99,12 +99,19 @@
     .mcell-links{display:flex;gap:14px;margin-top:8px}
     .mcell-date{font-size:11px;color:var(--muted);margin-top:6px}
     .empty{padding:60px 20px}
+    /* 早見表など「本物のテーブル表示のまま使いたい」箇所はこのクラスで元に戻す */
+    .simple-table{display:table !important;width:100%}
+    .simple-table thead{display:table-header-group !important}
+    .simple-table tbody{display:table-row-group !important}
+    .simple-table tr{display:table-row !important}
+    .simple-table td,.simple-table th{display:table-cell !important;padding:8px 10px;border:0;border-bottom:1px solid var(--line);font-size:13px}
+    .simple-table th{position:sticky;top:0;background:var(--panel)}
   }
 </style>
 </head>
 <body>
 <header>
-  <div class="title">📈 相場表アプリ <small>野田ヤード / v2.9（スマホ向けカード表示）</small></div>
+  <div class="title">📈 相場表アプリ <small>野田ヤード / v3.0（西暦/和暦 早見表）</small></div>
   <div class="toolbar">
     <input id="q" class="search" placeholder="車種・型式で検索（例: アルファード MNH15 / セレナ C26）">
     <button class="btn" id="micBtn" title="音声で車種検索">🎤</button>
@@ -119,6 +126,7 @@
     <button class="btn" id="syncBtn">🔄 更新</button>
     <button class="btn" id="cfgBtn">⚙ 同期設定</button>
     <button class="btn" id="taxBtn">🧮 還付計算</button>
+    <button class="btn" id="warekiBtn">📅 西暦/和暦</button>
   </div>
   <div class="chips" id="makers"></div>
   <div class="meta" id="syncbar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px">
@@ -224,6 +232,20 @@
     <div id="taxResult" style="background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:14px;line-height:1.9"></div>
     <div class="sheet-actions" style="margin-top:12px"><span></span>
       <button class="btn primary" id="taxClose">閉じる</button></div>
+  </div>
+</div>
+
+<!-- 西暦・和暦 早見表 -->
+<div class="overlay" id="warekiOverlay">
+  <div class="sheet">
+    <h3>📅 西暦・和暦 早見表</h3>
+    <input id="warekiSearch" class="search" style="width:100%;margin-bottom:10px" placeholder="絞り込み（例: 25 / H25 / 2013）">
+    <div style="max-height:60vh;overflow-y:auto;border:1px solid var(--line);border-radius:10px">
+      <table class="simple-table" style="width:100%"><thead><tr><th>西暦</th><th>和暦</th><th>備考</th></tr></thead>
+      <tbody id="warekiRows"></tbody></table>
+    </div>
+    <div class="sheet-actions" style="margin-top:12px"><span></span>
+      <button class="btn primary" id="warekiClose">閉じる</button></div>
   </div>
 </div>
 
@@ -537,6 +559,35 @@ function normDate(s){
 // 西暦→和暦（年のみ。境界年は新元号優先）
 function wareki(y){ y=parseInt(y,10); if(!y) return ""; if(y>=2019) return "R"+(y-2018); if(y>=1989) return "H"+(y-1988); if(y>=1926) return "S"+(y-1925); return ""; }
 function toWareki(s){ const ys=String(s||"").match(/\d{4}/g); if(!ys) return ""; return ys.map(wareki).join("〜"); }
+
+/* ===== 📅 西暦・和暦 早見表 ===== */
+function buildWarekiTable(filter){
+  const box=document.getElementById("warekiRows");
+  const thisYear=new Date().getFullYear();
+  const q=(filter||"").trim().toLowerCase().replace(/^h/,"");
+  const rows=[];
+  for(let y=thisYear+1; y>=1970; y--){
+    const wa=wareki(y);
+    let note="";
+    if(y===1989) note="S64/H1";
+    else if(y===2019) note="H31/R1";
+    if(q){
+      const hay=(y+" "+wa+" "+note).toLowerCase();
+      if(!hay.includes(q)) continue;
+    }
+    const isNow=y===thisYear;
+    rows.push(`<tr${isNow?' style="background:rgba(59,130,246,.15)"':''}><td>${y}年${isNow?' <span class="badge" style="margin-left:4px">今年</span>':''}</td><td><b>${wa}</b>年</td><td class="dim">${note}</td></tr>`);
+  }
+  box.innerHTML = rows.length? rows.join("") : '<tr><td colspan="3" class="dim" style="text-align:center;padding:20px">該当なし</td></tr>';
+}
+document.getElementById("warekiBtn").onclick=()=>{
+  document.getElementById("warekiSearch").value="";
+  buildWarekiTable("");
+  document.getElementById("warekiOverlay").classList.add("open");
+};
+document.getElementById("warekiSearch").oninput=(e)=>buildWarekiTable(e.target.value);
+document.getElementById("warekiClose").onclick=()=>document.getElementById("warekiOverlay").classList.remove("open");
+document.getElementById("warekiOverlay").onclick=(e)=>{ if(e.target.id==="warekiOverlay") document.getElementById("warekiOverlay").classList.remove("open"); };
 function isRecent(d){ if(!d) return false; const t=new Date(d); return (Date.now()-t.getTime())/(86400000) <= RECENT_DAYS; }
 function priceCell(val, active, hideDoc){
   if(val==null||val==="") return '<span class="dim">—</span>';
