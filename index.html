@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>相場表アプリ v3.0（野田ヤード）</title>
+<title>相場表アプリ v3.1（野田ヤード）</title>
 <style>
   :root{
     --bg:#0f1115; --panel:#1a1d24; --panel2:#222631; --line:#2c313c;
@@ -111,7 +111,7 @@
 </head>
 <body>
 <header>
-  <div class="title">📈 相場表アプリ <small>野田ヤード / v3.0（西暦/和暦 早見表）</small></div>
+  <div class="title">📈 相場表アプリ <small>野田ヤード / v3.1（年式・重量・エンジン更新/チェック）</small></div>
   <div class="toolbar">
     <input id="q" class="search" placeholder="車種・型式で検索（例: アルファード MNH15 / セレナ C26）">
     <button class="btn" id="micBtn" title="音声で車種検索">🎤</button>
@@ -273,7 +273,7 @@ const YEARMAP = {
 "ACR50":"2006-2019","ACR55":"2006-2019","GSR5":"2006-2019","AHR20":"2006-2019",
 "オーリス":"2006-2018","カローラルミオン":"2007-2016","カローラスパシオ":"2001-2007","AZT241":"2002-2007",
 "クラウンコンフォート":"1995-2017","GRS180":"2003-2008","GRS182":"2003-2008","GRS200":"2008-2012","GRS202":"2008-2012",
-"TSS10":"1995-2017","YXS10":"1995-2017","TSS11":"2001-2017","TCR10":"1990-1999","NHW20":"2003-2009","ZVW30":"2009-2015",
+"TSS10":"2008-2017","YXS10":"1995-2008","TSS11":"2008-2017","クラウンコンフォート 3Y":"1995-2008","クラウンコンフォート 1TR":"2008-2017","TCR10":"1990-1999","NHW20":"2003-2009","ZVW30":"2009-2015",
 "NSP141":"2012-2020","NCZ25":"2003-2011","NCP75":"2002-2005","NSP122":"2010-2016",
 "クラウンマジェスタ":"2004-2013","UZS186":"2004-2009","NCP81":"2003-2015",
 "NCP141":"2012-2020","NSP140":"2012-2020","NCP140":"2012-2020","NCP145":"2012-2020",
@@ -326,15 +326,22 @@ const YEARMAP = {
 "ウイッシュ 2000CC":"2003-2009","バネット":"1999-2016","クリッパー":"2003-2024","プレオプレス":"2007-2018",
 // 輸入車
 "UE16":"2004-2011","UD20":"2004-2011","1シリーズ":"2004-2011","VR20":"2005-2012","3シリーズ":"1998-2012","PG20":"2005-2012",
-"5シリーズ":"2003-2010","X3":"2003-2024","Z4":"2003-2016","MINI":"2001-2024","ミニクロスオーバー":"2010-2019",
+"5シリーズ":"2003-2010","X3":"2003-2017","Z4":"2003-2016","MINI":"2001-2024","ミニクロスオーバー":"2010-2019",
 "プジョー":"2000-2021","ポロ":"2002-2017","9NBKY":"2002-2005","PTクルーザー":"2000-2010","ゴルフ":"2004-2013",
 "ボルボV40":"1996-2004","1KAXX":"2004-2008","ビートル":"1999-2010","シトロエン":"2002-2020","フィアット":"2000-2020",
 "アルファロメオ":"2009-2018","Aクラス":"2005-2012","Cクラス":"2000-2014","204048":"2007-2014","204252":"2007-2014",
 "204248":"2010-2014","CLK":"2002-2009","Bクラス":"2005-2011","E350":"2002-2009","Vクラス":"1996-2014",
-"ジャガー":"1999-2007","A5":"2007-2016","パンダ":"2003-2020","211254":"2006-2009","AM25":"1998-2005","AACHY":"2012-2018"
+"ジャガー":"1999-2007","A5":"2007-2016","パンダ":"2003-2020","211254":"2006-2009","AM25":"1998-2005","AACHY":"2012-2018",
+// 2026-09 追加（ネット確認済み。※印は知識ベースで未確認）
+"ウィングロード":"2005-2018","エルグランド E51":"2002-2010","ZRR70":"2007-2014","ZRR75":"2007-2014",
+"HA24S":"2004-2009","ZC71S":"2010-2017","ハイゼットT 200P 210P":"1999-2014","S110P":"1994-1999",
+"アトレーW 3型":"1999-2005","パジェロミニ":"1998-2013","KK37":"2008-2012","NZE161":"2012-2018","204041":"2007-2011",
+"SXN10":"1998-2003","GH7":"2007-2011","YA30":"2009-2015","AZ10":"1998-2002","エクストレイル T31":"2007-2015",
+"JCG11":"1998-2007","XV GPE":"2013-2016","MY33":"1995-1999","アクティトラック":"1999-2021","S321B":"2012-2022","BB6324":"2007-2016"
 };
-const YEARKEYS = Object.keys(YEARMAP).sort((a,b)=>b.length-a.length);
-function lookupYear(name){ for(const k of YEARKEYS){ if(name.indexOf(k)>=0) return YEARMAP[k]; } return ""; }
+/* 辞書照合は searchKey(全角半角・空白・記号ゆれを吸収)で正規化して行う。長いキー優先 */
+const YEARKEYS = Object.keys(YEARMAP).map(k=>[searchKey(k),k]).sort((a,b)=>b[0].length-a[0].length);
+function lookupYear(name){ const n=searchKey(name); for(const [nk,k] of YEARKEYS){ if(nk && n.indexOf(nk)>=0) return YEARMAP[k]; } return ""; }
 
 /* 車両重量（kg・カタログ概算レンジ。型式優先・長いキー優先。要確認はグーネット🔎で） */
 const WEIGHTMAP = {
@@ -399,10 +406,16 @@ const WEIGHTMAP = {
 "アルファロメオ":"1150-1250","Aクラス":"1300-1450","Bクラス":"1400-1500","Cクラス":"1480-1700","CLK":"1500-1650",
 "E350":"1750-1900","Vクラス":"2100-2300","ジャガー":"1700-1850","A5":"1500-1650","A4":"1430-1600",
 "VR20":"1550-1650","1KAXX":"1350-1450","204048":"1500-1600","204252":"1550-1650","204248":"1500-1600",
-"パンダ":"900-1000","211254":"1780-1850","AM25":"1450-1550","9NBKY":"1130-1180","AACHY":"900-950"
+"パンダ":"900-1000","211254":"1780-1850","AM25":"1450-1550","9NBKY":"1130-1180","AACHY":"900-950",
+// 2026-09 追加（※V70/T31/ZRR/アクティ/サクシードは重量がネットで取れず概算レンジ）
+"ウィングロード":"1190-1260","エルグランド E51":"1860-2000","ZRR70":"1560-1660","ZRR75":"1610-1710",
+"ZC71S":"950-1000","パジェロミニ":"910-1000","KK37":"1930-1970","NZE161":"1110-1170","204041":"1470-1510",
+"SXN10":"1350-1390","GH7":"1330-1380","YA30":"1930-1980","AZ10":"970-1030","エクストレイル T31":"1480-1600",
+"JCG11":"1470-1500","XV GPE":"1500-1520","MY33":"1560-1600","アクティトラック":"690-760","S321B":"900-960",
+"BB6324":"1750-1850","サクシード":"1080-1230","ハイゼットT":"720-800"
 };
-const WEIGHTKEYS = Object.keys(WEIGHTMAP).sort((a,b)=>b.length-a.length);
-function lookupWeight(name){ for(const k of WEIGHTKEYS){ if(name.indexOf(k)>=0) return WEIGHTMAP[k]; } return ""; }
+const WEIGHTKEYS = Object.keys(WEIGHTMAP).map(k=>[searchKey(k),k]).sort((a,b)=>b[0].length-a[0].length);
+function lookupWeight(name){ const n=searchKey(name); for(const [nk,k] of WEIGHTKEYS){ if(nk && n.indexOf(nk)>=0) return WEIGHTMAP[k]; } return ""; }
 
 /* エンジン型式（車両型式→搭載エンジン。長いキー優先。辞書に無い車種は🔎で確認） */
 const ENGINEMAP = {
@@ -460,7 +473,7 @@ const ENGINEMAP = {
 "DA63T":"K6A","DA16T":"R06A","DB52T":"F6A","DA62T":"K6A","キャリイT":"K6A",
 "ZC11S":"M13A","ZD11S":"M13A","スイフト 72":"K12B","スイフト 71":"K12B","ソリオ":"K12B","ZC72S":"K12B",
 // ダイハツ
-"ミライース":"KF","アトレー":"EF-DET","ハイゼット 321":"KF","ハイゼット 331":"KF","ハイゼット 320":"EF-VE","ハイゼットT 210P":"EF-SE","ハイゼットカーゴ":"KF/EF",
+"ミライース":"KF","アトレーW 3型":"EF-DET","ハイゼット 321":"KF","ハイゼット 331":"KF","ハイゼット 320":"EF-VE","ハイゼットT 210P":"EF-SE","ハイゼットカーゴ":"KF/EF",
 "S321":"KF-VE","S331":"KF-VE","L375S":"KF-VE",
 // 輸入車
 "UE16":"N45B16A","UD20":"N46B20","VR20":"N46B20B","PG20":"N43B20A","NU25":"N52B25A","1シリーズ":"N45B16A",
@@ -470,10 +483,16 @@ const ENGINEMAP = {
 "204048":"M271","204252":"M271","204248":"M271","CLK":"M271","Bクラス":"M266","E350":"M272","Vクラス":"OM611",
 "ジャガー":"AJ-V6","A5":"CDNC","パンダ":"169A4","211254":"M272","AM25":"M52B25","AACHY":"CHY",
 // 追加
-"アベンシス":"1AZ/3ZR","クラウンマジェスタ":"1UZ/3UZ","バネット":"F8"
+"アベンシス":"1AZ/3ZR","クラウンマジェスタ":"1UZ/3UZ","バネット":"F8",
+// 2026-09 追加
+"HA36V":"R06A","ウィングロード":"HR15DE","エルグランド E51":"VQ25DE/VQ35DE","ZRR70":"3ZR-FE/FAE","ZRR75":"3ZR-FE/FAE",
+"HA24S":"K6A","ZC71S":"K12B","ハイゼットT 200P 210P":"EF-SE/KF-VE","S110P":"EF-SE","アトレーW S3":"KF-VE/DET",
+"パジェロミニ":"4A30","KK37":"3.7L V6(K型)","NZE161":"1NZ-FE","204041":"M271","SXN10":"3S-FE/FSE","GH7":"EJ20",
+"YA30":"N54/N55B30A","AZ10":"CGA3DE/CG13DE","エクストレイル T31":"MR20DE","JCG11":"2JZ-GE","XV GPE":"FB20(HV)",
+"MY33":"VQ25DE","アクティトラック":"E07Z","S321B":"KF-VE/DET","BB6324":"B6324S"
 };
-const ENGINEKEYS = Object.keys(ENGINEMAP).sort((a,b)=>b.length-a.length);
-function lookupEngine(name){ for(const k of ENGINEKEYS){ if(name.indexOf(k)>=0) return ENGINEMAP[k]; } return ""; }
+const ENGINEKEYS = Object.keys(ENGINEMAP).map(k=>[searchKey(k),k]).sort((a,b)=>b[0].length-a[0].length);
+function lookupEngine(name){ const n=searchKey(name); for(const [nk,k] of ENGINEKEYS){ if(nk && n.indexOf(nk)>=0) return ENGINEMAP[k]; } return ""; }
 
 /* ===== 双方向同期（Google スプレッドシート / Apps Script） ===== */
 const API_KEY="soba_api", CACHE_KEY="soba_v01_cache";
@@ -635,7 +654,8 @@ function render(){
     const docBadge=(/書/.test(r.n)&&!docOff&&!String(r.aw).includes('書'))?' <span class="badge doc" title="車検書類付（車名に書付き表記）">書</span>':'';
     const eng=lookupEngine(r.n), cc=lookupCC(r.n);
     const engHtml=eng?('<span class="englink" data-eng="'+eng+'" title="同じエンジンの車種を表示">'+eng+'</span>'):'<span class="dim">—</span>';
-    const yearHtml=r.y?(r.y+'<br><span style="opacity:.8">'+toWareki(r.y)+'</span>'):'<span class="dim">—</span>';
+    const yv=r.y||lookupYear(r.n);   // シート保存値を優先、無ければ辞書から自動表示（重量・エンジンと同じ運用）
+    const yearHtml=yv?(yv+'<br><span style="opacity:.8">'+toWareki(yv)+'</span>'):'<span class="dim">—</span>';
     const weightHtml=wt?wt+'<small style="color:var(--muted)">kg</small>':'<span class="dim">—</span>';
     const linksHtml=`<a class="goo" href="${gooUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔎年式</a>
         <a class="goo" href="${gooWtUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="margin-left:10px">🔎重量</a>
@@ -772,7 +792,7 @@ function toCSV(){
   const esc=s=>{ s=String(s==null?"":s); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
   const lines=[head.join(",")];
   DATA.slice().sort((a,b)=>MAKERS.indexOf(a.m)-MAKERS.indexOf(b.m)||a.n.localeCompare(b.n,"ja"))
-    .forEach(r=>lines.push([r.m,r.n,r.aw,r.l,r.g,r.y,lookupWeight(r.n),r.memo,r.d].map(esc).join(",")));
+    .forEach(r=>lines.push([r.m,r.n,r.aw,r.l,r.g,r.y||lookupYear(r.n),lookupWeight(r.n),r.memo,r.d].map(esc).join(",")));
   return "﻿"+lines.join("\r\n");
 }
 document.getElementById("exportBtn").onclick=()=>{
@@ -829,14 +849,28 @@ const JIZEI = [
 ];
 // エンジン型式→排気量cc（自動車税の区分判定用）
 const ENGINE_CC = {"K3":1300,"3SZ":1500,"2NZ":1300,"1NZ":1500,"1ZZ":1800,"2ZR":1800,"3ZR":2000,"1AZ":2000,"2AZ":2400,"1MZ":3000,"2GR":3500,"1KR":1000,"2SZ":1300,"1SZ":1000,"1NR":1300,"4GR":2500,"3GR":3000,"2UR":5000,"1UR":4600,"3UZ":4300,"1UZ":4000,"1G-":2000,"1TR":2000,"3Y-":2000,"HR15":1500,"HR16":1600,"HR12":1200,"CR12":1200,"CR14":1400,"QR20":2000,"QR25":2500,"MR20":2000,"MR18":1800,"VQ23":2300,"VQ25":2500,"VQ35":3500,"VK45":4500,"VG33":3300,"QG15":1500,"MRA8":1800,"NA20":2000,"K20A":2000,"K24":2400,"R20A":2000,"R18A":1800,"L13A":1300,"L15A":1500,"LDA":1300,"LEB":1500,"LEA":1500,"D17A":1700,"J30A":3000,"J35A":3500,"B20B":2000,"L3":2300,"L5":2500,"LF":2000,"ZJ":1300,"ZY":1500,"P3":1300,"SH-":2200,"4B12":2400,"4B11":2000,"4B10":1800,"K12B":1200,"M13A":1300,"EJ15":1500,"EJ20":2000,"EJ25":2500,"FB16":1600,"EM57":1000,"F8":1800,
-"K6A":660,"F6A":660,"R06A":660,"KF":660,"EF":660,"3G83":660,"EN07":660,"2TZ":2400,"2NR":1500};
+"K6A":660,"F6A":660,"R06A":660,"KF":660,"EF":660,"3G83":660,"EN07":660,"2TZ":2400,"2NR":1500,
+// 輸入車ほか（完全一致で参照。エンジン欄の表記そのものをキーにする）
+"N45B16A":1600,"N46B20":2000,"N46B20B":2000,"N43B20A":2000,"N52B25":2500,"N52B25A":2500,"M52B25":2500,"N12B16A":1600,"N18B16A":1600,
+"EP6":1600,"BBM":1400,"BKY":1400,"EDZ":2400,"BLX":1600,"B4184S":1800,"BWA":2000,"AQY":2000,"169A4":1200,"955A7":1400,
+"M266":1700,"M271":1800,"M272":3500,"OM611":2200,"AJ-V6":3000,"CDNC":2000,"CHY":1000,
+"3.7L V6(K型)":3700,"N54/N55B30A":3000,"CGA3DE/CG13DE":1300,"3S-FE/FSE":2000,"VQ25DE/VQ35DE":2500,"3ZR-FE/FAE":2000,
+"EF-SE/KF-VE":660,"KF-VE/DET":660,"E07Z":660,"4A30":660,"B6324S":3200,"FB20(HV)":2000,"2JZ-GE":3000};
+// 同じエンジン型式でも排気量が違う車の上書き（車名キー→cc）
+const CCMAP = {"211254":3000};
 function lookupCC(name){
   // 1) 車名に明示の排気量（1300 / 2400 / 2000CC 等）
   const m=String(name||"").match(/(?:^|[^A-Za-z0-9０-９])([1-9]\d{2,3})(?:cc|CC|㏄)?(?![0-9A-Za-z])/);
   if(m){ const v=parseInt(m[1],10); if(v>=550&&v<=6500) return v; }
-  // 2) エンジン型式から
+  // 2) 車名キーの上書き（E300など）
+  const sn=searchKey(name);
+  for(const k in CCMAP){ if(sn.indexOf(searchKey(k))>=0) return CCMAP[k]; }
+  // 3) エンジン型式から（完全一致を優先、次に部分一致）
   const eng=lookupEngine(name);
-  if(eng){ for(const k in ENGINE_CC){ if(eng.indexOf(k)===0||eng.indexOf(k)>=0) return ENGINE_CC[k]; } }
+  if(eng){
+    if(ENGINE_CC[eng]) return ENGINE_CC[eng];
+    for(const k in ENGINE_CC){ if(eng.indexOf(k)>=0) return ENGINE_CC[k]; }
+  }
   return 0;
 }
 function jizeiBracket(cc){ for(const b of JIZEI){ if(cc<=b.max) return b; } return JIZEI[JIZEI.length-1]; }
@@ -851,12 +885,12 @@ function bracketByKg(kg){
 function isKei(maker, name){
   name=name||"";
   if(maker==="ダイハツ") return true;
-  return /アルト|エブリイ|エヴリイ|キャリイ|キャリー|DA52V|DA62T|DA63T|DA16T|DB52T|64V|64W|プレオ|キャロル|クリッパー|ミライース|ハイゼット|アトレー|ワゴンR|スペーシア|タント|ムーヴ|ハスラー|ラパン|N-?BOX/.test(name);
+  return /アルト|エブリイ|エヴリイ|キャリイ|キャリー|DA52V|DA62T|DA63T|DA16T|DB52T|64V|64W|プレオ|キャロル|クリッパー|ミライース|ハイゼット|アトレー|ワゴンR|スペーシア|タント|ムーヴ|ハスラー|ラパン|N-?BOX|アクティ|サンバー|パジェロミニ/.test(name);
 }
 // HV/EV＝エコカー本則を自動判定
 function isEco(name){
   name=name||"";
-  return /HV|ＨＶ|ハイブリッド|プリウス|アクア|リーフ|インサイト|SAI/.test(name);
+  return /HV|ＨＶ|ハイブリッド|プリウス|アクア|リーフ|インサイト|SAI|XV\s*GPE/.test(name);
 }
 function yen(n){ return "¥"+Number(n).toLocaleString("ja-JP"); }
 // 車齢区分の選択肢に「初度登録◯年以前が対象」を和暦/西暦で動的表示
