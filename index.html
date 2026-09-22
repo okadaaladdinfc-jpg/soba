@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>相場表アプリ v3.2（野田ヤード）</title>
+<title>相場表アプリ v3.3（野田ヤード）</title>
 <style>
   :root{
     --bg:#0f1115; --panel:#1a1d24; --panel2:#222631; --line:#2c313c;
@@ -111,7 +111,7 @@
 </head>
 <body>
 <header>
-  <div class="title">📈 相場表アプリ <small>野田ヤード / v3.2（変更履歴を追加）</small></div>
+  <div class="title">📈 相場表アプリ <small>野田ヤード / v3.3（車ごとの価格変更履歴）</small></div>
   <div class="toolbar">
     <input id="q" class="search" placeholder="車種・型式で検索（例: アルファード MNH15 / セレナ C26）">
     <button class="btn" id="micBtn" title="音声で車種検索">🎤</button>
@@ -150,7 +150,10 @@
 <!-- editor -->
 <div class="overlay" id="overlay">
   <div class="sheet">
-    <h3 id="edTitle">編集</h3>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h3 id="edTitle" style="margin:0">編集</h3>
+      <button type="button" class="btn" id="priceHistBtn" style="display:none">📜 価格履歴</button>
+    </div>
     <div class="field"><label>メーカー</label>
       <select id="edMaker"></select></div>
     <div class="field"><label>車種・型式</label>
@@ -257,6 +260,17 @@
     <div id="changelogList" style="max-height:65vh;overflow-y:auto"></div>
     <div class="sheet-actions" style="margin-top:12px"><span></span>
       <button class="btn primary" id="changelogClose">閉じる</button></div>
+  </div>
+</div>
+
+<!-- この車の価格変更履歴 -->
+<div class="overlay" id="priceHistOverlay">
+  <div class="sheet" style="max-width:560px">
+    <h3 style="margin-bottom:4px">📜 価格変更履歴</h3>
+    <div id="priceHistTarget" class="dim" style="font-size:12px;margin-bottom:10px"></div>
+    <div id="priceHistList" style="max-height:55vh;overflow-y:auto"></div>
+    <div class="sheet-actions" style="margin-top:12px"><span></span>
+      <button class="btn primary" id="priceHistClose">閉じる</button></div>
   </div>
 </div>
 
@@ -520,6 +534,17 @@ function jsonp(url){ return new Promise((res,rej)=>{
   document.body.appendChild(s);
   setTimeout(()=>{ if(window[cb]) done(false); }, 15000);
 });}
+// 任意のクエリでJSONP取得（例: "action=history&id=xxx"）
+function jsonpQuery(query){ return new Promise((res,rej)=>{
+  const cb="__sjp"+Date.now()+Math.floor(Math.random()*1000);
+  const s=document.createElement("script");
+  const done=(ok,d)=>{ try{delete window[cb];}catch(_){} s.remove(); ok?res(d):rej(new Error("net")); };
+  window[cb]=(d)=>done(true,d);
+  s.onerror=()=>done(false);
+  s.src=API()+(API().indexOf("?")>=0?"&":"?")+query+"&callback="+cb;
+  document.body.appendChild(s);
+  setTimeout(()=>{ if(window[cb]) done(false); }, 15000);
+});}
 async function syncPull(){
   if(!API()){ setStatus("同期オフ（ローカル保存）"); return; }
   setStatus("同期中…");
@@ -621,6 +646,8 @@ document.getElementById("warekiOverlay").onclick=(e)=>{ if(e.target.id==="wareki
 
 /* ===== 📋 変更履歴（新しい順） ===== */
 const CHANGELOG = [
+  {v:"3.3", d:"2026-09-22", t:"📜 車ごとの価格変更履歴を追加", note:"編集画面から、その車のAW/レス/ネギンがいつ・いくらからいくらに変わったかを確認できます（今後の変更から記録）。"},
+  {v:"3.2", d:"2026-09-22", t:"📋 変更履歴を追加", note:"このアプリ自体のアップデート内容を一覧で確認できるようにしました。"},
   {v:"3.1", d:"2026-09-22", t:"年式・重量・エンジンをまとめて更新・点検", note:"新規22車種を追加。BMWなど一部の年式が誤って同じ値になっていたのを訂正。検索の表記ゆれにも強くしました。"},
   {v:"3.0", d:"2026-08-23", t:"📅 西暦・和暦 早見表を追加", note:"車検証の年式確認にすぐ使える一覧表。"},
   {v:"2.9", d:"2026-08-19", t:"スマホでの見やすさを改善", note:"横スクロールしていた表を、1台ずつのカード表示に変更。メーカー選択も折り返し表示に。"},
@@ -646,6 +673,33 @@ function buildChangelog(){
 document.getElementById("changelogBtn").onclick=()=>{ buildChangelog(); document.getElementById("changelogOverlay").classList.add("open"); };
 document.getElementById("changelogClose").onclick=()=>document.getElementById("changelogOverlay").classList.remove("open");
 document.getElementById("changelogOverlay").onclick=(e)=>{ if(e.target.id==="changelogOverlay") document.getElementById("changelogOverlay").classList.remove("open"); };
+
+/* ===== 📜 この車の価格変更履歴 ===== */
+async function openPriceHistory(id, name){
+  document.getElementById("priceHistTarget").textContent = name? ("対象：" + name) : "";
+  const box=document.getElementById("priceHistList");
+  box.innerHTML = '<div class="dim" style="text-align:center;padding:20px">読み込み中…</div>';
+  document.getElementById("priceHistOverlay").classList.add("open");
+  if(!API()){ box.innerHTML='<div class="dim" style="text-align:center;padding:20px">同期オフのため履歴を取得できません</div>'; return; }
+  try{
+    const d=await jsonpQuery("action=history&id="+encodeURIComponent(id));
+    if(!d||!d.ok){ box.innerHTML='<div class="dim" style="text-align:center;padding:20px">取得に失敗しました</div>'; return; }
+    const rows=(d.rows||[]).filter(h=>h && h.field && h.date);  // サーバー未対応時に無関係な行が混じるのを防ぐ
+    if(!rows.length){ box.innerHTML='<div class="dim" style="text-align:center;padding:20px">この車の価格変更履歴はまだありません<br><span style="font-size:11px">（今後の変更から記録されます）</span></div>'; return; }
+    box.innerHTML = rows.map(h=>
+      `<div style="padding:9px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;align-items:center">
+        <div><span class="badge" style="margin-right:6px">${h.field}</span>${h.oldVal||'—'} → <b style="color:var(--accent2)">${h.newVal||'—'}</b></div>
+        <div class="dim" style="font-size:11px;white-space:nowrap">${h.date}</div>
+      </div>`).join("");
+  }catch(e){ box.innerHTML='<div class="dim" style="text-align:center;padding:20px">通信エラー</div>'; }
+}
+document.getElementById("priceHistBtn").onclick=()=>{
+  const id=document.getElementById("priceHistBtn").dataset.id;
+  const name=document.getElementById("edModel").value;
+  if(id) openPriceHistory(id, name);
+};
+document.getElementById("priceHistClose").onclick=()=>document.getElementById("priceHistOverlay").classList.remove("open");
+document.getElementById("priceHistOverlay").onclick=(e)=>{ if(e.target.id==="priceHistOverlay") document.getElementById("priceHistOverlay").classList.remove("open"); };
 function isRecent(d){ if(!d) return false; const t=new Date(d); return (Date.now()-t.getTime())/(86400000) <= RECENT_DAYS; }
 function priceCell(val, active, hideDoc){
   if(val==null||val==="") return '<span class="dim">—</span>';
@@ -757,6 +811,9 @@ function openEditor(id){
   editId=id;
   const r = id ? DATA.find(x=>x.id===id) : {m:"トヨタ",n:"",aw:"",l:"",g:"",memo:"",y:"",d:""};
   document.getElementById("edTitle").textContent = id?"編集":"新規追加";
+  const phBtn=document.getElementById("priceHistBtn");
+  phBtn.style.display = (id && API())?"block":"none";
+  phBtn.dataset.id=id||"";
   const ms=document.getElementById("edMaker");
   ms.innerHTML = MAKERS.map(m=>`<option ${m===r.m?'selected':''}>${m}</option>`).join("");
   document.getElementById("edModel").value=r.n;
