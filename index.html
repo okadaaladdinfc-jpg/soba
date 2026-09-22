@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>相場表アプリ v3.3（野田ヤード）</title>
+<title>相場表アプリ v3.4（野田ヤード）</title>
 <style>
   :root{
     --bg:#0f1115; --panel:#1a1d24; --panel2:#222631; --line:#2c313c;
@@ -111,7 +111,7 @@
 </head>
 <body>
 <header>
-  <div class="title">📈 相場表アプリ <small>野田ヤード / v3.3（車ごとの価格変更履歴）</small></div>
+  <div class="title">📈 相場表アプリ <small>野田ヤード / v3.4（価格履歴の日時表示を修正）</small></div>
   <div class="toolbar">
     <input id="q" class="search" placeholder="車種・型式で検索（例: アルファード MNH15 / セレナ C26）">
     <button class="btn" id="micBtn" title="音声で車種検索">🎤</button>
@@ -646,6 +646,7 @@ document.getElementById("warekiOverlay").onclick=(e)=>{ if(e.target.id==="wareki
 
 /* ===== 📋 変更履歴（新しい順） ===== */
 const CHANGELOG = [
+  {v:"3.4", d:"2026-09-22", t:"価格履歴の日時表示を修正", note:"動作確認済み。サーバーから届く日時を短い形に自動整形。"},
   {v:"3.3", d:"2026-09-22", t:"📜 車ごとの価格変更履歴を追加", note:"編集画面から、その車のAW/レス/ネギンがいつ・いくらからいくらに変わったかを確認できます（今後の変更から記録）。"},
   {v:"3.2", d:"2026-09-22", t:"📋 変更履歴を追加", note:"このアプリ自体のアップデート内容を一覧で確認できるようにしました。"},
   {v:"3.1", d:"2026-09-22", t:"年式・重量・エンジンをまとめて更新・点検", note:"新規22車種を追加。BMWなど一部の年式が誤って同じ値になっていたのを訂正。検索の表記ゆれにも強くしました。"},
@@ -675,6 +676,18 @@ document.getElementById("changelogClose").onclick=()=>document.getElementById("c
 document.getElementById("changelogOverlay").onclick=(e)=>{ if(e.target.id==="changelogOverlay") document.getElementById("changelogOverlay").classList.remove("open"); };
 
 /* ===== 📜 この車の価格変更履歴 ===== */
+// 履歴の日時を "2026-09-22 17:26" の形に整形（サーバーの日付型がそのまま返っても崩れないように）
+function fmtHistDate(s){
+  if(!s) return "";
+  s=String(s);
+  if(/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(s)) return s.replace("T"," ").slice(0,16);
+  const t=new Date(s);
+  if(!isNaN(t.getTime())){
+    const p=n=>String(n).padStart(2,"0");
+    return t.getFullYear()+"-"+p(t.getMonth()+1)+"-"+p(t.getDate())+" "+p(t.getHours())+":"+p(t.getMinutes());
+  }
+  return s;
+}
 async function openPriceHistory(id, name){
   document.getElementById("priceHistTarget").textContent = name? ("対象：" + name) : "";
   const box=document.getElementById("priceHistList");
@@ -689,7 +702,7 @@ async function openPriceHistory(id, name){
     box.innerHTML = rows.map(h=>
       `<div style="padding:9px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;align-items:center">
         <div><span class="badge" style="margin-right:6px">${h.field}</span>${h.oldVal||'—'} → <b style="color:var(--accent2)">${h.newVal||'—'}</b></div>
-        <div class="dim" style="font-size:11px;white-space:nowrap">${h.date}</div>
+        <div class="dim" style="font-size:11px;white-space:nowrap">${fmtHistDate(h.date)}</div>
       </div>`).join("");
   }catch(e){ box.innerHTML='<div class="dim" style="text-align:center;padding:20px">通信エラー</div>'; }
 }
