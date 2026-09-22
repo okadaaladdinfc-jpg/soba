@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>相場表アプリ v3.4（野田ヤード）</title>
+<title>相場表アプリ v3.5（野田ヤード）</title>
 <style>
   :root{
     --bg:#0f1115; --panel:#1a1d24; --panel2:#222631; --line:#2c313c;
@@ -111,7 +111,7 @@
 </head>
 <body>
 <header>
-  <div class="title">📈 相場表アプリ <small>野田ヤード / v3.4（価格履歴の日時表示を修正）</small></div>
+  <div class="title">📈 相場表アプリ <small>野田ヤード / v3.5（変更履歴ボタンをページ下部へ）</small></div>
   <div class="toolbar">
     <input id="q" class="search" placeholder="車種・型式で検索（例: アルファード MNH15 / セレナ C26）">
     <button class="btn" id="micBtn" title="音声で車種検索">🎤</button>
@@ -127,7 +127,6 @@
     <button class="btn" id="cfgBtn">⚙ 同期設定</button>
     <button class="btn" id="taxBtn">🧮 還付計算</button>
     <button class="btn" id="warekiBtn">📅 西暦/和暦</button>
-    <button class="btn" id="changelogBtn">📋 変更履歴</button>
   </div>
   <div class="chips" id="makers"></div>
   <div class="meta" id="syncbar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px">
@@ -145,6 +144,9 @@
     <tbody id="rows"></tbody>
   </table>
   <div class="empty hidden" id="empty">該当なし</div>
+  <div style="text-align:center;padding:24px 0 8px">
+    <button class="btn" id="changelogBtn" style="font-size:12px;color:var(--muted)">📋 変更履歴を見る</button>
+  </div>
 </main>
 
 <!-- editor -->
@@ -646,6 +648,7 @@ document.getElementById("warekiOverlay").onclick=(e)=>{ if(e.target.id==="wareki
 
 /* ===== 📋 変更履歴（新しい順） ===== */
 const CHANGELOG = [
+  {v:"3.5", d:"2026-09-22", t:"「変更履歴」ボタンをページ下部へ移動", note:"普段は使わないボタンなので、上部ツールバーから一番下へ。"},
   {v:"3.4", d:"2026-09-22", t:"価格履歴の日時表示を修正", note:"動作確認済み。サーバーから届く日時を短い形に自動整形。"},
   {v:"3.3", d:"2026-09-22", t:"📜 車ごとの価格変更履歴を追加", note:"編集画面から、その車のAW/レス/ネギンがいつ・いくらからいくらに変わったかを確認できます（今後の変更から記録）。"},
   {v:"3.2", d:"2026-09-22", t:"📋 変更履歴を追加", note:"このアプリ自体のアップデート内容を一覧で確認できるようにしました。"},
