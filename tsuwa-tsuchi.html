@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>通話通知</title>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--ink:#1f2933;--sub:#6b7785;--line:#e3e6ea;--pri:#1565c0;--in:#2e7d32;--out:#1565c0;--warn:#c62828}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,"Segoe UI","Meiryo",sans-serif}
+header{background:#16324f;color:#fff;padding:10px 16px;display:flex;align-items:center;gap:10px}
+header h1{font-size:17px;margin:0}
+.ver{font-size:11px;opacity:.6}
+main{max-width:640px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+label{display:block;font-size:13px;color:var(--sub);margin-top:8px}
+input{width:100%;font:inherit;border:1px solid #c9ced5;border-radius:8px;padding:8px 10px}
+.btn{border:0;background:var(--pri);color:#fff;padding:9px 16px;border-radius:8px;cursor:pointer;font:inherit;font-weight:600;margin-top:10px}
+.btn.gray{background:#e8ebef;color:var(--ink)}
+.st{font-size:13px;color:var(--sub)}
+.ok{color:var(--in);font-weight:700}.ng{color:var(--warn);font-weight:700}
+.ring{border-left:6px solid var(--in);padding:8px 12px;margin:8px 0;background:#fff;border-radius:8px;cursor:pointer;white-space:pre-wrap}
+.ring.out{border-left-color:var(--out)}
+.ring b{font-size:16px}
+</style>
+</head>
+<body>
+<header><h1>🔔 通話通知（PC用）</h1><span class="ver">v1.0</span></header>
+<main>
+  <div class="card">
+    <div id="status" class="st">準備中…</div>
+    <button class="btn" id="enable">通知を有効にする</button>
+    <button class="btn gray" id="test">テスト通知</button>
+    <p class="st">このタブは<b>開いたまま</b>にしてください（最小化や他のタブの裏でもOK）。スマホで着信・発信があると、Windowsの画面右下に通知が出ます。通知をクリックすると、その顧客の履歴が開きます。</p>
+  </div>
+  <div class="card">
+    <b>最近の着信・発信</b>
+    <div id="list" class="st">まだありません</div>
+  </div>
+  <details class="card">
+    <summary>設定</summary>
+    <label>アプリURL（…/exec）</label><input id="url">
+    <label>パスコード</label><input id="key" type="password" inputmode="numeric">
+    <label>表示する担当者（空欄＝全員。例：岡田）</label><input id="only">
+    <button class="btn" id="save">保存</button>
+  </details>
+</main>
+<script>
+const DEFAULT_URL = ''; // 公開ページなのでURLは埋め込まない（設定で入力）
+const POLL_MS = 10000;
+const $ = s => document.querySelector(s);
+const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const cfg = { url: ls('tt_url') || DEFAULT_URL, key: ls('tt_key') || '', only: ls('tt_only') || '' };
+let seen = {}, recent = [], lastOk = 0, audio;
+try { seen = JSON.parse(ls('tt_seen') || '{}'); } catch (e) {}
+
+function fmtNum(n) {
+  n = String(n || '');
+  if (/^0[5789]0\d{8}$/.test(n)) return n.slice(0, 3) + '-' + n.slice(3, 7) + '-' + n.slice(7);
+  if (/^0[36]\d{8}$/.test(n)) return n.slice(0, 2) + '-' + n.slice(2, 6) + '-' + n.slice(6);
+  return n;
+}
+function hm(t) { const d = new Date(t); return d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0'); }
+
+// JSONP（GASの別ドメインから読むため）
+function jsonp(params) {
+  return new Promise((res, rej) => {
+    const cb = 'cb' + Date.now() + Math.floor(Math.random() * 1000);
+    const s = document.createElement('script');
+    const t = setTimeout(() => { cleanup(); rej(new Error('タイムアウト')); }, 15000);
+    function cleanup() { clearTimeout(t); delete window[cb]; s.remove(); }
+    window[cb] = d => { cleanup(); res(d); };
+    s.onerror = () => { cleanup(); rej(new Error('接続できません')); };
+    s.src = cfg.url + '?' + new URLSearchParams(Object.assign({ callback: cb }, params));
+    document.head.appendChild(s);
+  });
+}
+
+function beep() {
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.25].forEach(d => {
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.frequency.value = 880; o.connect(g); g.connect(audio.destination);
+      g.gain.setValueAtTime(0.15, audio.currentTime + d); g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + d + 0.2);
+      o.start(audio.currentTime + d); o.stop(audio.currentTime + d + 0.2);
+    });
+  } catch (e) {}
+}
+
+function notify(r) {
+  const title = (r.dir === 'out' ? '📞 発信中' : '📲 着信中') + ' → ' + (r.staff || '') + '　' + fmtNum(r.num);
+  const open = () => { window.open(cfg.url + '?c=' + encodeURIComponent(r.num), 'tsuwa_app'); };
+  if ('Notification' in window && Notification.permission === 'granted') {
+    const n = new Notification(title, { body: r.text || '', tag: r.num + '|' + r.at, requireInteraction: true });
+    n.onclick = () => { window.focus(); open(); n.close(); };
+  }
+  beep();
+  recent.unshift(Object.assign({ title }, r)); recent = recent.slice(0, 20);
+  renderList();
+  flashTitle(title);
+}
+function renderList() {
+  if (!recent.length) return;
+  $('#list').innerHTML = recent.map((r, i) => `<div class="ring ${r.dir === 'out' ? 'out' : ''}" data-i="${i}"><span class="st">${hm(r.at)}</span> <b>${esc(r.title)}</b>\n${esc(r.text)}</div>`).join('');
+  document.querySelectorAll('#list .ring').forEach(el => el.onclick = () => window.open(cfg.url + '?c=' + encodeURIComponent(recent[+el.dataset.i].num), 'tsuwa_app'));
+}
+let flashT;
+function flashTitle(t) {
+  clearInterval(flashT); let on = false, n = 0;
+  flashT = setInterval(() => { document.title = (on = !on) ? '🔔 ' + t : '通話通知'; if (++n > 20) { clearInterval(flashT); document.title = '通話通知'; } }, 1000);
+}
+
+async function poll() {
+  if (!cfg.url || !cfg.key) return setStatus('<span class="ng">下の「設定」でアプリURLとパスコードを入れてください</span>');
+  try {
+    const d = await jsonp({ a: 'rings', key: cfg.key });
+    if (!d.ok) throw new Error(d.error);
+    lastOk = Date.now();
+    d.rings.forEach(r => {
+      const k = r.num + '|' + r.at;
+      if (seen[k] || Date.now() - r.at > 120000) return;
+      if (cfg.only && r.staff !== cfg.only) return;
+      seen[k] = Date.now();
+      notify(r);
+    });
+    Object.keys(seen).forEach(k => { if (Date.now() - seen[k] > 600000) delete seen[k]; });
+    ls('tt_seen', JSON.stringify(seen));
+    setStatus();
+  } catch (e) { setStatus('<span class="ng">⚠ ' + esc(e.message) + '</span>'); }
+}
+function setStatus(extra) {
+  const p = !('Notification' in window) ? '<span class="ng">このブラウザは通知非対応</span>'
+    : Notification.permission === 'granted' ? '<span class="ok">通知：有効</span>'
+    : Notification.permission === 'denied' ? '<span class="ng">通知：ブロック中（アドレスバー左の鍵マーク→通知→許可）</span>'
+    : '<span class="ng">通知：未許可（下のボタンを押してください）</span>';
+  $('#status').innerHTML = p + '　' + (extra || (lastOk ? '受信待ち（最終確認 ' + new Date(lastOk).toLocaleTimeString() + '）' : '接続中…')) + (cfg.only ? '　担当：' + esc(cfg.only) : '　担当：全員');
+  $('#enable').style.display = ('Notification' in window && Notification.permission === 'default') ? '' : 'none';
+}
+
+$('#url').value = cfg.url; $('#key').value = cfg.key; $('#only').value = cfg.only;
+$('#save').onclick = () => {
+  cfg.url = $('#url').value.trim().replace(/[#?].*$/, ''); cfg.key = $('#key').value.trim(); cfg.only = $('#only').value.trim();
+  ls('tt_url', cfg.url); ls('tt_key', cfg.key); ls('tt_only', cfg.only);
+  poll();
+};
+$('#enable').onclick = async () => { beep(); if ('Notification' in window) await Notification.requestPermission(); setStatus(); };
+$('#test').onclick = () => notify({ num: '09012345678', staff: 'テスト', dir: 'in', at: Date.now(), text: '山田様（山田モータース）\n前回 10/3 14:52 岡田 着信\nメモ：見積送付済み' });
+if (!cfg.url || !cfg.key) document.querySelector('details').open = true;
+setStatus(); poll(); setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>
