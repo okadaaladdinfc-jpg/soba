@@ -25,7 +25,7 @@ input{width:100%;font:inherit;border:1px solid #c9ced5;border-radius:8px;padding
 </style>
 </head>
 <body>
-<header><h1>🔔 通話通知（PC用）</h1><span class="ver">v1.0</span></header>
+<header><h1>🔔 通話通知（PC用）</h1><span class="ver">v1.1</span></header>
 <main>
   <div class="card">
     <div id="status" class="st">準備中…</div>
@@ -90,7 +90,8 @@ function beep() {
 }
 
 function notify(r) {
-  const title = (r.dir === 'out' ? '📞 発信中' : '📲 着信中') + ' → ' + (r.staff || '') + '　' + fmtNum(r.num);
+  const late = Math.floor((Date.now() - r.at) / 60000);
+  const title = (r.dir === 'out' ? '📞 発信中' : '📲 着信中') + ' → ' + (r.staff || '') + '　' + fmtNum(r.num) + (late >= 1 ? '（' + late + '分前）' : '');
   const open = () => { window.open(cfg.url + '?c=' + encodeURIComponent(r.num), 'tsuwa_app'); };
   if ('Notification' in window && Notification.permission === 'granted') {
     const n = new Notification(title, { body: r.text || '', tag: r.num + '|' + r.at, requireInteraction: true });
@@ -120,7 +121,7 @@ async function poll() {
     lastOk = Date.now();
     d.rings.forEach(r => {
       const k = r.num + '|' + r.at;
-      if (seen[k] || Date.now() - r.at > 120000) return;
+      if (seen[k] || Date.now() - r.at > 300000) return; // 5分以内なら遅れても知らせる
       if (cfg.only && r.staff !== cfg.only) return;
       seen[k] = Date.now();
       notify(r);
@@ -148,7 +149,12 @@ $('#save').onclick = () => {
 $('#enable').onclick = async () => { beep(); if ('Notification' in window) await Notification.requestPermission(); setStatus(); };
 $('#test').onclick = () => notify({ num: '09012345678', staff: 'テスト', dir: 'in', at: Date.now(), text: '山田様（山田モータース）\n前回 10/3 14:52 岡田 着信\nメモ：見積送付済み' });
 if (!cfg.url || !cfg.key) document.querySelector('details').open = true;
-setStatus(); poll(); setInterval(poll, POLL_MS);
+setStatus(); poll();
+// 最小化・裏のタブでもChromeに間引かれないよう、時計は「ワーカー」で刻む（通常のタイマーは最小化で1分に1回以下に落ちる）
+try {
+  const w = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(1), ' + POLL_MS + ');'], { type: 'text/javascript' })));
+  w.onmessage = () => poll();
+} catch (e) { setInterval(poll, POLL_MS); }
 </script>
 </body>
 </html>
