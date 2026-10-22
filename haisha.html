@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>配車管理システム｜野田ヤード v12.1</title>
+<title>配車管理システム｜野田ヤード v12.2</title>
 <style>
 :root{--p:#1a4f8b;--pl:#2563b0;--ac:#e8750a;--ok:#16a34a;--wn:#d97706;--ng:#dc2626;
 --bg:#f0f4f8;--card:#fff;--bd:#d1d9e0;--tx:#1e293b;--mu:#64748b;
@@ -167,8 +167,8 @@ tr:hover td{background:#f8fafc;}
 <header>
   <h1>🚛 配車管理システム</h1>
   <div class="dbadge" id="hdrDate"></div>
-  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v12.1</span>
-  <span style="font-size:11px;opacity:.7;">更新: 2026/10/21 v12.1</span>
+  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v12.2</span>
+  <span style="font-size:11px;opacity:.7;">更新: 2026/10/22 v12.2</span>
   <span id="syncBadge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.18);">…</span>
   <span style="display:flex;gap:6px;margin-left:auto;align-items:center;">
     <button class="btn btn-o btn-sm" onclick="setApiUrl()" title="クラウド共有のURL設定（GASのウェブアプリ exec URL）。空欄で共有オフ">⚙ 共有設定</button>
@@ -4871,6 +4871,44 @@ function _genPlanCore(){
       r.trips.forEach((x,i)=>x.n=i+1); r.daySchedule=calcDaySched(r.trips,r.drv,cfg); drvTrips.set(r.drv.id,r.trips.length);
       warns.push({lv:'er',jid:j.id,when:'unassigned',msg:`🔴【終業ガード・割当解除】${j.vehicle}（${j.pc||j.pp}）を${r.drv.name}から外しました：終了予定${toHM(before)}が上限${toHM(_lim(r))}を超えるため（21時禁止／重点対象4名18時／本郷17時）。他ドライバー・翌日へ手動で回してください`});
     }
+  }
+
+  // ★v12.2: 遠方の後便ガード — 強制割当などで遠方が2便目以降に入った場合、他のドライバーの1便目（1台だけの便）に
+  //   方向・距離・車両・重量・時間窓・終業がすべて合えば移す（「遠方とAMは1便目」の現場ルール）。移せなければ従来どおり警告のまま
+  {
+    const _lim=r=>drvEOD(r.drv,HARD_EOD);
+    const _ok=(route,sched)=>sched&&sched.length&&sched[sched.length-1].done<=_lim(route)&&route.trips.every((t2,ti)=>t2.jobs.every((j2,ji)=>{
+      const arr=sched?.[ti]?.arrJ?.[ji]; if(arr==null)return true;
+      if(getEffectiveSlot(j2)==='am'&&arr>720)return false;
+      if(j2.timeSlot==='time'&&j2.time){const{tTo}=parseTimeRange(j2.time);if(tTo>0&&arr>tTo)return false;}
+      return true;}));
+    truckRoutes.forEach(r=>{
+      for(let ti=r.trips.length-1;ti>=1;ti--){
+        const t=r.trips[ti];
+        for(let ji=t.jobs.length-1;ji>=0;ji--){
+          const F=t.jobs[ji]; if(!isFarJob(F)||isTanpatsu(F))continue;
+          let dest=null;
+          for(const r2 of truckRoutes){
+            if(r2===r||!r2.trips.length||r2.drv._skipByHelp||r2.drv.isHelp)continue;
+            const t1=r2.trips[0]; if(t1.jobs.length!==1||isTanpatsu(t1.jobs[0]))continue;
+            const P=t1.jobs[0];
+            if(F.isMT&&r2.drv.atOnly)continue;
+            if(r2.truck&&!checkCompat(r2.truck,F).ok)continue;
+            if(!pairDirOK(P,F)||!pairWOK(r2.truck,P,F))continue;
+            if((P.isLo||P.isHiRoof)&&(F.isLo||F.isHiRoof))continue;
+            t1.jobs.push(F); const ns=calcDaySched(r2.trips,r2.drv,cfg);
+            if(_ok(r2,ns)){r2.daySchedule=ns;dest=r2;break;}
+            t1.jobs.pop();
+          }
+          if(!dest)continue;
+          t.jobs.splice(ji,1);
+          if(!t.jobs.length)r.trips.splice(ti,1);
+          r.trips.forEach((x,i)=>x.n=i+1); r.daySchedule=calcDaySched(r.trips,r.drv,cfg); drvTrips.set(r.drv.id,r.trips.length);
+          warns.push({lv:'wn',msg:`🧭【遠方を1便目へ】${F.vehicle}（${F.pc||F.pp}・${estimateTravel(F)}分）を${r.drv.name}${ti+1}便から${dest.drv.name}1便へ移動（${dest.trips[0].jobs[0].vehicle}と2台積み）`});
+          break;
+        }
+      }
+    });
   }
 
   // ★v11.0: 本郷ルール（更新版）— 1便目=遠方・2便目以降=超近場(30分以内)。終業(retBy)超過も警告
