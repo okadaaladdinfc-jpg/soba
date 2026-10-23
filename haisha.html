@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>配車管理システム｜野田ヤード v12.2</title>
+<title>配車管理システム｜野田ヤード v12.3</title>
 <style>
 :root{--p:#1a4f8b;--pl:#2563b0;--ac:#e8750a;--ok:#16a34a;--wn:#d97706;--ng:#dc2626;
 --bg:#f0f4f8;--card:#fff;--bd:#d1d9e0;--tx:#1e293b;--mu:#64748b;
@@ -167,8 +167,8 @@ tr:hover td{background:#f8fafc;}
 <header>
   <h1>🚛 配車管理システム</h1>
   <div class="dbadge" id="hdrDate"></div>
-  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v12.2</span>
-  <span style="font-size:11px;opacity:.7;">更新: 2026/10/22 v12.2</span>
+  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v12.3</span>
+  <span style="font-size:11px;opacity:.7;">更新: 2026/10/22 v12.3</span>
   <span id="syncBadge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.18);">…</span>
   <span style="display:flex;gap:6px;margin-left:auto;align-items:center;">
     <button class="btn btn-o btn-sm" onclick="setApiUrl()" title="クラウド共有のURL設定（GASのウェブアプリ exec URL）。空欄で共有オフ">⚙ 共有設定</button>
@@ -4911,6 +4911,130 @@ function _genPlanCore(){
     });
   }
 
+  // ★v12.3: 2台積み保証（会社方針 2026-10-22）— 「1台便は物理的に大きくて載らない車だけ。それ以外は必ず2台ペア。
+  //   例外は野田市内など」。全処理の最後に残った1台便へ、未割当・他の1台便から相手を付ける。
+  //   相手は 方角の基準に合う人を優先→いなければ地点間の近い順（上限PAIR_RELAX_MAX分）。
+  //   守る条件: 車両適合・重量・MT・下段専用どうし・AM/遠方は1便目のみ・時間指定・終業(21時/18時/17時)・本郷2便目超近場・
+  //            現場の名指しNG・遠方＋超近場
+  {
+    const PAIR_RELAX_MAX=120;
+    const isNodaLocal=j=>learnKey(j.pc)==='野田市'||estimateTravel(j)<=10;
+    const _lim=r=>drvEOD(r.drv,HARD_EOD);
+    const _ok=(route,sched)=>sched&&sched.length&&sched[sched.length-1].done<=_lim(route)&&route.trips.every((t2,ti)=>t2.jobs.every((j2,ji)=>{
+      const arr=sched?.[ti]?.arrJ?.[ji]; if(arr==null)return true;
+      if(getEffectiveSlot(j2)==='am'&&arr>720)return false;
+      if(j2.timeSlot==='time'&&j2.time){const{tTo}=parseTimeRange(j2.time);if(tTo>0&&arr>tTo)return false;}
+      return true;}));
+    const hardOK=(r,t,F,B)=>{
+      if(!B||B===F||isTanpatsu(B))return false;
+      if(B.isMT&&r.drv.atOnly)return false;
+      if(r.truck&&!checkCompat(r.truck,B).ok)return false;
+      if(!pairWOK(r.truck,F,B))return false;
+      if((F.isLo||F.isHiRoof)&&(B.isLo||B.isHiRoof))return false;
+      if(t.n>1&&(getEffectiveSlot(B)==='am'||isFarJob(B)))return false;
+      if(NEAR2ND_DRIVERS.includes(r.drv.name)&&t.n>=2&&estimateTravel(B)>SUPER_NEAR_MIN)return false;
+      if(PAIR_NG_EXPLICIT.has([learnKey(F.pc),learnKey(B.pc)].sort().join('＋')))return false;
+      const ta=estimateTravel(F),tb=estimateTravel(B); if(Math.max(ta,tb)>=90&&Math.min(ta,tb)<=30)return false;
+      if(!(cityKeyOf(F.pc)===cityKeyOf(B.pc))&&geoMin(F,B)>PAIR_RELAX_MAX)return false;
+      return true;
+    };
+    for(let iter=0;iter<20;iter++){
+      const singles=[];
+      truckRoutes.forEach(r=>r.trips.forEach(t=>{ if(t.jobs.length===1&&!isTanpatsu(t.jobs[0]))singles.push({r,t}); }));
+      const recv=singles.filter(x=>!isNodaLocal(x.t.jobs[0])).sort((a,b)=>estimateTravel(b.t.jobs[0])-estimateTravel(a.t.jobs[0]));
+      let did=false;
+      for(const s of recv){
+        const F=s.t.jobs[0];
+        const cands=[];
+        unassT.forEach(B=>{ if(hardOK(s.r,s.t,F,B))cands.push({B,from:null}); });
+        singles.forEach(x=>{ if(x!==s&&x.t.jobs.length===1&&hardOK(s.r,s.t,F,x.t.jobs[0]))cands.push({B:x.t.jobs[0],from:x}); });
+        cands.forEach(c=>{ c.dirOK=pairDirOK(F,c.B); c.d=geoMin(F,c.B); c.score=(c.dirOK?0:1000)+c.d+(c.from?0:-5); });
+        cands.sort((a,b)=>a.score-b.score);
+        for(const c of cands){
+          const dr=c.from?c.from.r:null;
+          const sOldTrips=s.r.trips.slice(), sOldSched=s.r.daySchedule;
+          const dOldTrips=dr?dr.trips.slice():null, dOldSched=dr?dr.daySchedule:null;
+          s.t.jobs.push(c.B);
+          if(dr){ dr.trips.splice(dr.trips.indexOf(c.from.t),1); dr.trips.forEach((x,i)=>x.n=i+1); }
+          s.r.trips.forEach((x,i)=>x.n=i+1);
+          const ns=calcDaySched(s.r.trips,s.r.drv,cfg);
+          if(_ok(s.r,ns)){
+            s.r.daySchedule=ns; drvTrips.set(s.r.drv.id,s.r.trips.length);
+            if(dr&&dr!==s.r){ dr.daySchedule=calcDaySched(dr.trips,dr.drv,cfg); drvTrips.set(dr.drv.id,dr.trips.length); }
+            if(!dr){ const ui=unassT.indexOf(c.B); if(ui>=0)unassT.splice(ui,1); assignedT.add(c.B.id); }
+            warns.push({lv:'wn',msg:`📦【2台積み保証】${s.r.drv.name}${s.t.n}便：${F.vehicle}（${F.pc||F.pp}）＋${c.B.vehicle}（${c.B.pc||c.B.pp}）${dr?`（${dr.drv.name}の1台便から）`:'（未割当から）'}${c.dirOK?'':`／方角の基準外・地点間約${Math.round(c.d)}分＝ルート要確認`}`});
+            did=true; break;
+          }
+          // 元に戻す
+          s.t.jobs.pop();
+          s.r.trips=sOldTrips; s.r.trips.forEach((x,i)=>x.n=i+1); s.r.daySchedule=sOldSched;
+          if(dr&&dr!==s.r){ dr.trips=dOldTrips; dr.trips.forEach((x,i)=>x.n=i+1); dr.daySchedule=dOldSched; }
+        }
+        if(did)break;
+      }
+      if(!did)break;
+    }
+  }
+
+  // ★v12.3: 未割当どうしをペアにして、時間に余裕のあるドライバーの新しい便へ（野田市内は1台でも可）
+  {
+    const isNodaLocal=j=>learnKey(j.pc)==='野田市'||estimateTravel(j)<=10;
+    const _lim=r=>drvEOD(r.drv,HARD_EOD);
+    const _ok=(route,sched)=>sched&&sched.length&&sched[sched.length-1].done<=_lim(route)&&route.trips.every((t2,ti)=>t2.jobs.every((j2,ji)=>{
+      const arr=sched?.[ti]?.arrJ?.[ji]; if(arr==null)return true;
+      if(getEffectiveSlot(j2)==='am'&&arr>720)return false;
+      if(j2.timeSlot==='time'&&j2.time){const{tTo}=parseTimeRange(j2.time);if(tTo>0&&arr>tTo)return false;}
+      return true;}));
+    const canTake=(r,jobs)=>{
+      if(r.drv._skipByHelp||r.drv.isHelp||!r.trips.length)return false;
+      const cap=Math.max(r.maxTrips||0,r.drv.baseTrips||0,2);
+      if(r.trips.length>=cap)return false;
+      const n=r.trips.length+1;
+      for(const j of jobs){
+        if(isTanpatsu(j)&&jobs.length>1)return false;
+        if(j.isMT&&r.drv.atOnly)return false;
+        if(r.truck&&!checkCompat(r.truck,j).ok)return false;
+        if(getEffectiveSlot(j)==='am'||isFarJob(j))return false;              // 新便は2便目以降＝AM・遠方は不可
+        if(NEAR2ND_DRIVERS.includes(r.drv.name)&&estimateTravel(j)>SUPER_NEAR_MIN)return false;
+        if(n>2&&MID_PREFS.has(j.pp))return false;                            // 神奈川は2便目まで
+      }
+      if(jobs.length===2&&!pairWOK(r.truck,jobs[0],jobs[1]))return false;
+      return true;
+    };
+    const pairOK=(a,b)=>{
+      if(isTanpatsu(a)||isTanpatsu(b))return false;
+      if((a.isLo||a.isHiRoof)&&(b.isLo||b.isHiRoof))return false;
+      if(PAIR_NG_EXPLICIT.has([learnKey(a.pc),learnKey(b.pc)].sort().join('＋')))return false;
+      const ta=estimateTravel(a),tb=estimateTravel(b); if(Math.max(ta,tb)>=90&&Math.min(ta,tb)<=30)return false;
+      return cityKeyOf(a.pc)===cityKeyOf(b.pc)||geoMin(a,b)<=120;
+    };
+    const place=(jobs,label)=>{
+      const rs=truckRoutes.filter(r=>canTake(r,jobs)).sort((a,b)=>{const ea=a.daySchedule?.length?a.daySchedule[a.daySchedule.length-1].done:0, eb=b.daySchedule?.length?b.daySchedule[b.daySchedule.length-1].done:0; return ea-eb;});
+      for(const r of rs){
+        r.trips.push({n:r.trips.length+1,jobs:jobs.slice(),fillTrip:true});
+        const ns=calcDaySched(r.trips,r.drv,cfg);
+        if(_ok(r,ns)){ r.daySchedule=ns; drvTrips.set(r.drv.id,r.trips.length);
+          jobs.forEach(j=>{const ui=unassT.indexOf(j); if(ui>=0)unassT.splice(ui,1); assignedT.add(j.id);});
+          warns.push({lv:'wn',msg:`🚛【${label}】${r.drv.name}${r.trips.length}便：${jobs.map(j=>`${j.vehicle}（${j.pc||j.pp}）`).join('+')}${jobs.length===2&&!pairDirOK(jobs[0],jobs[1])?`／方角の基準外・地点間約${Math.round(geoMin(jobs[0],jobs[1]))}分＝ルート要確認`:''}`});
+          return true; }
+        r.trips.pop();
+      }
+      return false;
+    };
+    // (1) 未割当どうしのペア（方角の基準に合う→近い順）
+    for(let guard=0;guard<15;guard++){
+      const pool=unassT.filter(j=>!isTanpatsu(j)&&getEffectiveSlot(j)!=='am'&&!isFarJob(j));
+      const pairs=[];
+      for(let i=0;i<pool.length;i++)for(let k=i+1;k<pool.length;k++){ const a=pool[i],b=pool[k]; if(pairOK(a,b))pairs.push({a,b,sc:(pairDirOK(a,b)?0:1000)+geoMin(a,b)}); }
+      pairs.sort((x,y)=>x.sc-y.sc);
+      let did=false;
+      for(const p of pairs){ if(place([p.a,p.b],'未割当ペアで新便')){did=true;break;} }
+      if(!did)break;
+    }
+    // (2) 野田市内は1台でも新便に（会社方針の例外）
+    unassT.filter(j=>isNodaLocal(j)&&getEffectiveSlot(j)!=='am').slice().forEach(j=>place([j],'野田市内の1台便'));
+  }
+
   // ★v11.0: 本郷ルール（更新版）— 1便目=遠方・2便目以降=超近場(30分以内)。終業(retBy)超過も警告
   truckRoutes.filter(r=>NEAR2ND_DRIVERS.includes(r.drv.name)).forEach(r=>{
     r.trips.forEach(t=>{
@@ -5929,6 +6053,7 @@ function renderPlan(plan){
       <div class="ri">R-W 🔧 <span>事故車・足折れ → ウィンチ強化(1or2シリーズ) + 難易度高対応ドライバー</span></div>
       <div class="ri">R-P 📐 <span>大型ミニバン下段 → 前柱伸び(1シリーズ) または 3シリーズ（3シリーズは前柱なしでも積載可）</span></div>
       <div class="ri">R-LP 📚 <span>過去の実配車から学習したペアは2台積み可（${LEARNED_META.from_.replace(/-/g,'/')}〜${LEARNED_META.to.replace(/-/g,'/')}・${LEARNED_META.days}日・${LEARNED_META.distinct}通り）。現場NG指定・遠方＋超近場は対象外</span></div>
+      <div class="ri">R-2C 📦 <span>1台便は物理的に載らない車（単発）だけ。それ以外は必ず2台ペア（方角の基準に合う相手を優先→いなければ近い相手）。例外＝野田市内は1台便も可</span></div>
       <div class="ri">R-HP 🔧 <span>ヘルプは自走が自分の案件を引き取った車で向かい、けん引してトラックまで運ぶ。トラック到着時刻・引取地点からの距離・自走自身の時間指定で人と順番を自動決定</span></div>
       <div class="ri">R-L 🚗 <span>車高低い → 3シリーズ不可(アオリ段差問題)</span></div>
       <div class="ri">R-U ⬆️ <span>上段には小型車。重量1.5t超の上段配置は横転リスクで警告</span></div>
