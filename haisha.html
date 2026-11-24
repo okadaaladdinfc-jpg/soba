@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>配車管理システム｜野田ヤード v12.6</title>
+<title>配車管理システム｜野田ヤード v12.7</title>
 <style>
 :root{--p:#1a4f8b;--pl:#2563b0;--ac:#e8750a;--ok:#16a34a;--wn:#d97706;--ng:#dc2626;
 --bg:#f0f4f8;--card:#fff;--bd:#d1d9e0;--tx:#1e293b;--mu:#64748b;
@@ -58,7 +58,7 @@ tr:hover td{background:#f8fafc;}
 .bt{background:#dbeafe;color:var(--s1);}.bj{background:#ede9fe;color:#7c3aed;}
 .bs1{background:#dbeafe;color:var(--s1);}.bs2{background:#d1fae5;color:var(--s2);}.bs3{background:#fef3c7;color:var(--s3);}
 .tag{display:inline-block;padding:2px 5px;border-radius:3px;font-size:11px;background:#f1f5f9;color:var(--mu);margin:1px;}
-.tag-w{background:#fef3c7;color:#92400e;}.tag-ok{background:#dcfce7;color:#166534;}.tag-ng{background:#fee2e2;color:#991b1b;}.tag-miss{background:#fef3c7;color:#92400e;}
+.tag-w{background:#fef3c7;color:#92400e;}.tag-am{background:#dbeafe;color:#1d4ed8;font-weight:700;}.tag-ok{background:#dcfce7;color:#166534;}.tag-ng{background:#fee2e2;color:#991b1b;}.tag-miss{background:#fef3c7;color:#92400e;}
 
 /* Modal */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center;}
@@ -167,8 +167,8 @@ tr:hover td{background:#f8fafc;}
 <header>
   <h1>🚛 配車管理システム</h1>
   <div class="dbadge" id="hdrDate"></div>
-  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v12.6</span>
-  <span style="font-size:11px;opacity:.7;">更新: 2026/11/23 v12.6</span>
+  <span style="background:rgba(255,255,255,.25);border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;letter-spacing:.3px;">v12.7</span>
+  <span style="font-size:11px;opacity:.7;">更新: 2026/11/24 v12.7</span>
   <span id="syncBadge" style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.18);">…</span>
   <span style="display:flex;gap:6px;margin-left:auto;align-items:center;">
     <button class="btn btn-o btn-sm" onclick="setApiUrl()" title="クラウド共有のURL設定（GASのウェブアプリ exec URL）。空欄で共有オフ">⚙ 共有設定</button>
@@ -957,11 +957,18 @@ const LATER_TRIP_MAX={'本郷':50,'斉藤':45,'中村':75,'西川':75};
 function laterMax(d){ return d&&LATER_TRIP_MAX[d.name]!=null?LATER_TRIP_MAX[d.name]:null; }
 const NEAR2ND_DRIVERS=Object.keys(LATER_TRIP_MAX);
 // ★v12.6: 2便目以降に入れない「遠方」＝片道120分以上 または 遠い県（実態: 90〜119分は43%が2便目、120分以上は79〜90%が1便目）
-const LATE_FAR_MIN=120;
+const LATE_FAR_MIN=90; // ★v12.7: 120→90（岡田さん「最後の便に遠方が入ると退勤が遅くなる」2026-11-24）
 const LATE_FAR_PREFS=['静岡県','山梨県','長野県','福島県'];
-function isLateFar(j){ if(!j)return false; if(estimateTravel(j)>=LATE_FAR_MIN)return true; const pp=j.pp||CITY_PREF_MAP[j.pc||'']||''; return LATE_FAR_PREFS.includes(pp)&&estimateTravel(j)>=90; }
+function isLateFar(j){ if(!j)return false;
+  // ★v12.7: お客様の指定が午後開始（13時以降）の遠方は、後の便にしか入らないので例外
+  if(j.timeSlot==='time'&&j.time){ const{tFrom}=parseTimeRange(j.time); if(tFrom>=780)return false; }
+  if(getEffectiveSlot(j)==='pm')return false;
+  if(estimateTravel(j)>=LATE_FAR_MIN)return true; const pp=j.pp||CITY_PREF_MAP[j.pc||'']||''; return LATE_FAR_PREFS.includes(pp)&&estimateTravel(j)>=90; }
 // ★v12.6: 3便目の条件（実態: 3便が入るのは近場の日だけ）＝その日の最遠が90分未満、かつ3便目は片道60分以内
 const THIRD_TRIP_MAX=60, THIRD_TRIP_DAY_MAX=90;
+// ★v12.7: 1日の便数は最大3便（4便目は時間的に無理＝岡田さん指摘）、現地での待機は60分まで
+const MAX_TRIPS=3, WAIT_MAX=60;
+function tripWaitOver(trips){ return (trips||[]).some(t=>Math.max(t._waitJ1||0,t._waitJ2||0)>WAIT_MAX); }
 // ★v12.6: 退職日（この日の翌日以降は配車しない）。スタッフ設定 retireDate（YYYY-MM-DD）が優先
 const RETIRE_DATES={'斉藤':'2026-12-15'};
 const SUPER_NEAR_MIN=50; // ★v12.6: 本郷の2便目以降の上限（分）。30→50に（実態=直近の2便目は50分以内が98%・退勤時刻は30分以内と同じ。岡田さん承認 2026-11-23）
@@ -2660,6 +2667,7 @@ function _genPlanCore(){
       if(isLateFar(job)&&cur>=farLimit) return `【遠方配備NG】片道${LATE_FAR_MIN}分以上・遠い県は1便目のみ（現在${cur+1}便目）`; // ★v12.6
       if(laterMax(d)!=null&&cur>=1&&estimateTravel(job)>laterMax(d))
         return `【${d.name}ルールNG】2便目以降は片道${laterMax(d)}分以内のみ（${estimateTravel(job)}分）`;
+      if(cur>=MAX_TRIPS) return `【便数NG】1日の便数は${MAX_TRIPS}便まで`; // ★v12.7
       if(cur>=2){ const _r=truckRoutes.find(x=>x.drv.id===d.id);
         if(estimateTravel(job)>THIRD_TRIP_MAX) return `【3便目NG】3便目は片道${THIRD_TRIP_MAX}分以内のみ（${estimateTravel(job)}分）`;
         if(_r&&_r.trips.some(t=>t.jobs.some(j=>estimateTravel(j)>=THIRD_TRIP_DAY_MAX))) return `【3便目NG】その日に片道${THIRD_TRIP_DAY_MAX}分以上の便がある日は3便目を入れない`; }
@@ -2740,6 +2748,7 @@ function _genPlanCore(){
       if(isLateFar(job)&&cur>=farLimit) return false;     // ★v12.6: 片道120分以上・遠い県はtrip1のみ
       if(d.mornFar&&cur>=ms&&!isNearJob(job)) return false;  // mornFar午後は近場のみ
       if(laterMax(d)!=null&&cur>=1&&estimateTravel(job)>laterMax(d)) return false; // ★v12.6: 最終便側の上限（本郷50・斉藤45・中村/西川75）
+      if(cur>=MAX_TRIPS)return false; // ★v12.7: 4便目は作らない
       if(cur>=2){ if(estimateTravel(job)>THIRD_TRIP_MAX)return false; const _r=truckRoutes.find(x=>x.drv.id===d.id); if(_r&&_r.trips.some(t=>t.jobs.some(j=>estimateTravel(j)>=THIRD_TRIP_DAY_MAX)))return false; } // ★v12.6: 3便目の条件
       if(d.mornFar&&cur>=2&&estimateTravel(job)>50) return false; // 本郷ルール
       return true;
@@ -3177,7 +3186,7 @@ function _genPlanCore(){
   {
     const checkerNames=['時間指定','移動時間','遠方配備','ドライバー特性'];
     const checkerFns=[checkTimeSlot,checkTravelTime,checkFarDeployment,checkDriverSpec];
-    const checkerLevels=['er','wn','er','wn']; // 各チェックの深刻度
+    const checkerLevels=['wn','wn','wn','wn']; // ★v12.7: 途中点検の記録は「その他」へ（最終の便は後段のガードで検証済み）
     truckRoutes.forEach(r=>{
       const d=r.drv;
       r.trips.forEach((trip,ti)=>{
@@ -3504,7 +3513,7 @@ function _genPlanCore(){
       if(!cands.length){
         const _cost=2*Math.max(estimateTravel(j1),j2?estimateTravel(j2):0)+2*pkDur+ulDur;
         const _spd={very_fast:0,fast:0,standard:1,'':1,slow:2,very_slow:3};
-        cands=truckDrvs.filter(dd=>!dd.mornFar
+        cands=truckDrvs.filter(dd=>drvTrips.get(dd.id)<MAX_TRIPS&&!dd.mornFar
           &&!((dd.speed==='slow'||dd.speed==='very_slow')&&drvTrips.get(dd.id)>=2&&(estimateTravel(j1)>30||(j2&&estimateTravel(j2)>30))) // ★v6.5: 遅いドライバーの3便目は超近場のみ
           &&(drvDone.get(dd.id)||tgt)+_cost<=drvEOD(dd,20*60)) // ★v11.0: retBy（帰社時刻）を尊重
           .sort((a,b)=>{
@@ -4815,9 +4824,10 @@ function _genPlanCore(){
           if(tTo>0&&arr>tTo)ok=false;
         }
       }));
+      if(ok&&tripWaitOver(route.trips))ok=false; // ★v12.7: 現地待機60分超は不可
       if(ok){route.daySchedule=ns;return true;}
       trip.jobs.pop();
-      route.daySchedule=oldSched;
+      route.daySchedule=calcDaySched(route.trips,route.drv,cfg)||oldSched;
       return false;
     };
     for(let iter=0;iter<10;iter++){
@@ -4893,6 +4903,7 @@ function _genPlanCore(){
         else if(j2.timeSlot==='time'&&j2.time){const{tTo}=parseTimeRange(j2.time);if(tTo>0&&arr>tTo)ok=false;}
       }));
       if(ok&&ns&&ns.length&&ns[ns.length-1].done>drvEOD(route.drv,21*60))ok=false;
+      if(ok&&tripWaitOver(route.trips))ok=false; // ★v12.7
       if(ok){route.daySchedule=ns;return true;}
       trip.jobs.pop();route.daySchedule=old;return false;
     };
@@ -4924,7 +4935,7 @@ function _genPlanCore(){
             warns.push({lv:'wn',msg:`🏠【最終便ルール・移送】${j.vehicle}（${j.pc||j.pp}・${estimateTravel(j)}分）を${r.drv.name}${t.n}便から${moved.r2.drv.name}${moved.t2.n}便へ（2便目以降は${laterMax(r.drv)}分以内のみ）`});
           }else{
             if(!unassT.includes(j))unassT.push(j);
-            warns.push({lv:'er',msg:`🔴【最終便ルール・割当解除】${j.vehicle}（${j.pc||j.pp}・${estimateTravel(j)}分）を${r.drv.name}${t.n}便から外しました：2便目以降は${laterMax(r.drv)}分以内のみ。手動で他ドライバーへ割当してください`});
+            warns.push({lv:'er',jid:j.id,when:'unassigned',msg:`🔴【最終便ルール・割当解除】${j.vehicle}（${j.pc||j.pp}・${estimateTravel(j)}分）を${r.drv.name}${t.n}便から外しました：2便目以降は${laterMax(r.drv)}分以内のみ。手動で他ドライバーへ割当してください`});
           }
         }
       });
@@ -4943,7 +4954,7 @@ function _genPlanCore(){
   {
     const _end=r=>(r.daySchedule&&r.daySchedule.length)?r.daySchedule[r.daySchedule.length-1].done:0;
     const _lim=r=>drvEOD(r.drv,HARD_EOD);
-    const _winOK=(route,sched)=>route.trips.every((t2,ti)=>t2.jobs.every((j2,ji)=>{
+    const _winOK=(route,sched)=>!tripWaitOver(route.trips)&&route.trips.every((t2,ti)=>t2.jobs.every((j2,ji)=>{
       const arr=sched?.[ti]?.arrJ?.[ji]; if(arr==null)return true;
       if(getEffectiveSlot(j2)==='am'&&arr>720)return false;
       if(j2.timeSlot==='time'&&j2.time){const{tTo}=parseTimeRange(j2.time);if(tTo>0&&arr>tTo)return false;}
@@ -4983,10 +4994,62 @@ function _genPlanCore(){
     }
   }
 
+  // ★v12.7: 待機ガード＋便数ガード（岡田さん指摘 2026-11-24：森さんの便で現地7時間待ち・橋本さんの4便目は時間的に無理）
+  //   (1) 現地待機がWAIT_MAX分を超える便は、待つ側の案件を外して、待たずに済む別の便（他Dの1台便 or 新しい便）へ移す
+  //   (2) 4便目以降は、2便以下のドライバーへ便ごと移す。移せなければ未割当へ（🔴）
+  {
+    const _lim=r=>drvEOD(r.drv,HARD_EOD);
+    const _ok=(route)=>{ const sc=calcDaySched(route.trips,route.drv,cfg); route.daySchedule=sc;
+      return sc&&sc.length&&sc[sc.length-1].done<=_lim(route)&&!tripWaitOver(route.trips)&&route.trips.every((t2,ti)=>t2.jobs.every((j2,ji)=>{
+        const arr=sc?.[ti]?.arrJ?.[ji]; if(arr==null)return true;
+        if(getEffectiveSlot(j2)==='am'&&arr>720)return false;
+        if(j2.timeSlot==='time'&&j2.time){const{tTo}=parseTimeRange(j2.time);if(tTo>0&&arr>tTo)return false;}
+        return true;})); };
+    const fitsDrv=(r2,j,n)=>!(j.isMT&&r2.drv.atOnly)&&!(r2.truck&&!checkCompat(r2.truck,j).ok)
+      &&!(n>1&&(getEffectiveSlot(j)==='am'||isLateFar(j)))&&!(laterMax(r2.drv)!=null&&n>1&&estimateTravel(j)>laterMax(r2.drv))&&!(n>MAX_TRIPS);
+    const tryPlace=(j,exclude)=>{
+      // ①他Dの1台便に相方として
+      for(const r2 of truckRoutes){ if(r2===exclude||r2.drv._skipByHelp||r2.drv.isHelp)continue;
+        for(const t2 of r2.trips){ if(t2.jobs.length!==1||isTanpatsu(t2.jobs[0])||isTanpatsu(j))continue;
+          if(!fitsDrv(r2,j,t2.n)||!pairWOK(r2.truck,t2.jobs[0],j)||!pairDirOK(t2.jobs[0],j))continue;
+          if((j.isLo||j.isHiRoof)&&(t2.jobs[0].isLo||t2.jobs[0].isHiRoof))continue;
+          t2.jobs.push(j); if(_ok(r2))return r2.drv.name+t2.n+'便'; t2.jobs.pop(); _ok(r2); } }
+      // ②便数に余裕のあるDの新しい便
+      for(const r2 of truckRoutes.filter(x=>x!==exclude&&!x.drv._skipByHelp&&!x.drv.isHelp&&x.trips.length&&x.trips.length<MAX_TRIPS)){
+        const n=r2.trips.length+1; if(!fitsDrv(r2,j,n))continue;
+        if(n>=3&&(estimateTravel(j)>THIRD_TRIP_MAX||r2.trips.some(t=>t.jobs.some(x=>estimateTravel(x)>=THIRD_TRIP_DAY_MAX))))continue;
+        r2.trips.push({n,jobs:[j]}); if(_ok(r2)){ drvTrips.set(r2.drv.id,r2.trips.length); return r2.drv.name+n+'便'; } r2.trips.pop(); _ok(r2); }
+      return null;
+    };
+    // (1) 待機
+    truckRoutes.forEach(r=>{
+      for(let ti=0;ti<r.trips.length;ti++){
+        const t=r.trips[ti]; if(t.jobs.length!==2)continue;
+        const w1=t._waitJ1||0, w2=t._waitJ2||0; if(Math.max(w1,w2)<=WAIT_MAX)continue;
+        const W=w2>=w1?t.jobs[1]:t.jobs[0]; const wait=Math.round(Math.max(w1,w2));
+        t.jobs.splice(t.jobs.indexOf(W),1); _ok(r);
+        const to=tryPlace(W,r);
+        if(to) warns.push({lv:'wn',msg:`⏱【待機ガード】${W.vehicle}（${W.pc||W.pp}・${W.time||getEffectiveSlot(W)||''}）を${r.drv.name}${t.n}便から${to}へ（現地待ち約${wait}分を解消）`});
+        else { assignedT.delete(W.id); if(!unassT.includes(W))unassT.push(W);
+          warns.push({lv:'er',jid:W.id,when:'unassigned',msg:`🔴【待機ガード・割当解除】${W.vehicle}（${W.pc||W.pp}・${W.time||getEffectiveSlot(W)||''}）：${r.drv.name}${t.n}便に入れると現地で約${wait}分待つため外しました。時間の合う便へ手動で入れてください`}); }
+      }
+    });
+    // (2) 4便目以降
+    truckRoutes.forEach(r=>{
+      while(r.trips.length>MAX_TRIPS){
+        const t=r.trips.pop(); _ok(r); drvTrips.set(r.drv.id,r.trips.length);
+        t.jobs.forEach(j=>{ const to=tryPlace(j,r);
+          if(to) warns.push({lv:'wn',msg:`🔢【便数ガード】${j.vehicle}（${j.pc||j.pp}）を${r.drv.name}${t.n}便目から${to}へ（1日${MAX_TRIPS}便まで）`});
+          else { assignedT.delete(j.id); if(!unassT.includes(j))unassT.push(j);
+            warns.push({lv:'er',jid:j.id,when:'unassigned',msg:`🔴【便数ガード・割当解除】${j.vehicle}（${j.pc||j.pp}）：${r.drv.name}の${t.n}便目は時間的に無理なため外しました（1日${MAX_TRIPS}便まで）。他のドライバー・翌日へ回してください`}); } });
+      }
+    });
+  }
+
   // ★v12.6: 3便目ガード（実態＝3便目は近場の日だけ）— 条件に合わない3便目以降は、1便以下のドライバーの2便目へ移す（移せなければ⚠のまま＝引き取り優先）
   {
     const _lim=r=>drvEOD(r.drv,HARD_EOD);
-    const _ok=(route,sched)=>sched&&sched.length&&sched[sched.length-1].done<=_lim(route)&&route.trips.every((t2,ti)=>t2.jobs.every((j2,ji)=>{
+    const _ok=(route,sched)=>sched&&sched.length&&sched[sched.length-1].done<=_lim(route)&&!tripWaitOver(route.trips)&&route.trips.every((t2,ti)=>t2.jobs.every((j2,ji)=>{
       const arr=sched?.[ti]?.arrJ?.[ji]; if(arr==null)return true;
       if(getEffectiveSlot(j2)==='am'&&arr>720)return false;
       if(j2.timeSlot==='time'&&j2.time){const{tTo}=parseTimeRange(j2.time);if(tTo>0&&arr>tTo)return false;}
@@ -5025,7 +5088,7 @@ function _genPlanCore(){
   //   方向・距離・車両・重量・時間窓・終業がすべて合えば移す（「遠方とAMは1便目」の現場ルール）。移せなければ従来どおり警告のまま
   {
     const _lim=r=>drvEOD(r.drv,HARD_EOD);
-    const _ok=(route,sched)=>sched&&sched.length&&sched[sched.length-1].done<=_lim(route)&&route.trips.every((t2,ti)=>t2.jobs.every((j2,ji)=>{
+    const _ok=(route,sched)=>sched&&sched.length&&sched[sched.length-1].done<=_lim(route)&&!tripWaitOver(route.trips)&&route.trips.every((t2,ti)=>t2.jobs.every((j2,ji)=>{
       const arr=sched?.[ti]?.arrJ?.[ji]; if(arr==null)return true;
       if(getEffectiveSlot(j2)==='am'&&arr>720)return false;
       if(j2.timeSlot==='time'&&j2.time){const{tTo}=parseTimeRange(j2.time);if(tTo>0&&arr>tTo)return false;}
@@ -5068,7 +5131,7 @@ function _genPlanCore(){
     const PAIR_RELAX_MAX=120;
     const isNodaLocal=j=>learnKey(j.pc)==='野田市'||estimateTravel(j)<=10;
     const _lim=r=>drvEOD(r.drv,HARD_EOD);
-    const _ok=(route,sched)=>sched&&sched.length&&sched[sched.length-1].done<=_lim(route)&&route.trips.every((t2,ti)=>t2.jobs.every((j2,ji)=>{
+    const _ok=(route,sched)=>sched&&sched.length&&sched[sched.length-1].done<=_lim(route)&&!tripWaitOver(route.trips)&&route.trips.every((t2,ti)=>t2.jobs.every((j2,ji)=>{
       const arr=sched?.[ti]?.arrJ?.[ji]; if(arr==null)return true;
       if(getEffectiveSlot(j2)==='am'&&arr>720)return false;
       if(j2.timeSlot==='time'&&j2.time){const{tTo}=parseTimeRange(j2.time);if(tTo>0&&arr>tTo)return false;}
@@ -5129,14 +5192,14 @@ function _genPlanCore(){
   {
     const isNodaLocal=j=>learnKey(j.pc)==='野田市'||estimateTravel(j)<=10;
     const _lim=r=>drvEOD(r.drv,HARD_EOD);
-    const _ok=(route,sched)=>sched&&sched.length&&sched[sched.length-1].done<=_lim(route)&&route.trips.every((t2,ti)=>t2.jobs.every((j2,ji)=>{
+    const _ok=(route,sched)=>sched&&sched.length&&sched[sched.length-1].done<=_lim(route)&&!tripWaitOver(route.trips)&&route.trips.every((t2,ti)=>t2.jobs.every((j2,ji)=>{
       const arr=sched?.[ti]?.arrJ?.[ji]; if(arr==null)return true;
       if(getEffectiveSlot(j2)==='am'&&arr>720)return false;
       if(j2.timeSlot==='time'&&j2.time){const{tTo}=parseTimeRange(j2.time);if(tTo>0&&arr>tTo)return false;}
       return true;}));
     const canTake=(r,jobs)=>{
       if(r.drv._skipByHelp||r.drv.isHelp||!r.trips.length)return false;
-      const cap=Math.max(r.maxTrips||0,r.drv.baseTrips||0,2);
+      const cap=Math.min(MAX_TRIPS,Math.max(r.maxTrips||0,r.drv.baseTrips||0,2)); // ★v12.7: 最大3便
       if(r.trips.length>=cap)return false;
       const n=r.trips.length+1;
       for(const j of jobs){
@@ -5189,6 +5252,10 @@ function _genPlanCore(){
   // ★v12.6: キャリアの大きさ不明（単発にせずペアにした案件）の確認
   truckRoutes.forEach(r=>r.trips.forEach(t=>t.jobs.forEach(j=>{ if(t.jobs.length===2&&isCarrUnknownSize(j))
     warns.push({lv:'wn',jid:j.id,when:'assigned',msg:`⚠【キャリア付・大きさ確認】${r.drv.name}${t.n}便 ${j.vehicle}（${j.pc||j.pp}）：キャリアの大きさが不明のため2台積みにしています。キャリア大なら単発に変更してください`}); })));
+  // ★v12.7: 現地待機の注意は最終の便で作り直す（ガードで解消済みの古い注意を残さない）
+  for(let i=warns.length-1;i>=0;i--) if(/【現地待機/.test(warns[i].msg)) warns.splice(i,1);
+  truckRoutes.forEach(r=>{ r.daySchedule=calcDaySched(r.trips,r.drv,cfg); r.trips.forEach(t=>{ const w=Math.max(t._waitJ1||0,t._waitJ2||0);
+    if(w>30) warns.push({lv:'wn',msg:`⏳【現地待機${Math.round(w)}分】${r.drv.name}${t.n}便：時間指定の開始待ちがあります。`}); }); });
   // ★v12.6: 3便目の条件（実態＝近場の日だけ）に合わない便の警告
   truckRoutes.forEach(r=>r.trips.forEach(t=>{ if(t.n<3)return;
     const far=r.trips.some(x=>x.jobs.some(j=>estimateTravel(j)>=THIRD_TRIP_DAY_MAX)), long=t.jobs.filter(j=>estimateTravel(j)>THIRD_TRIP_MAX);
@@ -5444,7 +5511,7 @@ function jobMobLabel(job){
   return '';
 }
 function jobTsLabel(job){
-  if(job.timeSlot==='am')return '<span class="tag tag-ok">AM</span>';
+  if(job.timeSlot==='am')return '<span class="tag tag-am">AM</span>'; // ★v12.7: 仮(緑)と区別して青
   if(job.timeSlot==='pm')return '<span class="tag tag-w">PM</span>';
   if(job.timeSlot==='time')return `<span class="tag">${job.time}</span>`;
   return '<span class="tag" style="color:var(--mu)">フリー</span>';
@@ -6179,6 +6246,13 @@ function renderPlan(plan){
     &&!_truckKariAssigned.has(j.id)
     &&!(_unassAll.some(u=>u.id===j.id)));
   const _unassAll2=[...(_unassAll||[]),..._unassJiso];
+  // ★v12.7: 未割当の理由は警告欄ではなく、未割当一覧の各案件に表示する
+  const _whyMap=new Map();
+  warns.forEach(w=>{ if(w.lv==='er'&&w.when==='unassigned'&&w.jid&&!_whyMap.has(w.jid)) _whyMap.set(w.jid,w.msg.replace(/^[^】]*】/,'').replace(/^[^：]*：/,'')); });
+  const _unassWhy=job=>{ if(_whyMap.has(job.id))return _whyMap.get(job.id);
+    if(getEffectiveSlot(job)==='am')return 'AM指定。1便目に空きがなく正午までに着けません。ヘルプ/自走/翌日へ';
+    if(isTanpatsu(job))return '単発（1台便）で入る便がありません';
+    return ''; };
   const unassH=`
     <div class="route-sec" style="border:2px solid ${_unassAll2.length?'#fca5a5':'#cbd5e1'};background:${_unassAll2.length?'#fff5f5':'#f8fafc'};"
       ondragover="event.preventDefault()" ondrop="dropToUnass(event)">
@@ -6188,6 +6262,7 @@ function renderPlan(plan){
       <div style="display:flex;flex-wrap:wrap;gap:8px;padding:8px 0;">
         ${_unassAll2.map(job=>{
           const loc=`${job.pc}${job.pd?' '+job.pd:''}`;
+          const _why=_unassWhy(job);
           return `<div draggable="true" ondragstart="dragJob(event,'${job.id}')" title="ドラッグして便に割当" style="background:#fff;border:1.5px solid #fca5a5;border-radius:8px;padding:8px 12px;font-size:13px;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;cursor:grab;">
             <span style="font-weight:700;">${aucLabel(job)}</span>
             <span>${loc}</span>
@@ -6195,13 +6270,22 @@ function renderPlan(plan){
             ${jobMobLabel(job)}
             ${jobTsLabel(job)}
             ${jobFlags(job)}
+            ${_why?`<div style="flex-basis:100%;font-size:11px;color:#b91c1c;margin-top:3px;">理由：${_why}</div>`:''}
           </div>`;
         }).join('')}
       </div>
     </div>
   `;
 
-  const warnH=warns.length?`<div>${warns.map(w=>`<div class="wi ${w.lv}"><span>${w.lv==='er'?'🔴':'🟡'}</span><span>${w.msg}</span></div>`).join('')}</div>`
+  // ★v12.7: 警告欄は「要対応（赤）」だけ表示し、その他の注意はたたむ（現場はほとんど見ないため）
+  const _wRow=w=>`<div class="wi ${w.lv}"><span>${w.lv==='er'?'🔴':'🟡'}</span><span>${w.msg}</span></div>`;
+  const _unIds=new Set((_unassAll2||[]).map(j=>j.id));
+  const _isUnassReason=w=>(w.when==='unassigned'&&w.jid&&_unIds.has(w.jid))||/AM未割当|自走案件 \d+件未割当/.test(w.msg);
+  const _wEr=warns.filter(w=>w.lv==='er'&&!_isUnassReason(w)), _wOther=warns.filter(w=>w.lv!=='er'||_isUnassReason(w));
+  const warnH=warns.length?`<div>
+      ${_wEr.length?`<div style="font-weight:700;color:#b91c1c;margin:10px 0 4px;">🔴 要対応（${_wEr.length}件）</div>${_wEr.map(_wRow).join('')}`:`<div style="color:var(--ok);font-weight:600;margin:8px 0;">✅ 要対応の警告なし</div>`}
+      ${_wOther.length?`<details style="margin-top:8px;"><summary style="cursor:pointer;color:var(--mu);font-size:12px;">その他の注意・処理の記録（${_wOther.length}件）— クリックで表示</summary>${_wOther.map(_wRow).join('')}</details>`:''}
+    </div>`
     :`<div style="color:var(--ok);font-weight:600;margin:8px 0;">✅ 警告なし</div>`;
 
   document.getElementById('planOut').innerHTML=`
@@ -6217,7 +6301,7 @@ function renderPlan(plan){
       <div class="ri">R-W 🔧 <span>事故車・足折れ → ウィンチ強化(1or2シリーズ) + 難易度高対応ドライバー</span></div>
       <div class="ri">R-P 📐 <span>大型ミニバン下段 → 前柱伸び(1シリーズ) または 3シリーズ（3シリーズは前柱なしでも積載可）</span></div>
       <div class="ri">R-LP 📚 <span>過去の実配車から学習したペアは2台積み可（${LEARNED_META.from_.replace(/-/g,'/')}〜${LEARNED_META.to.replace(/-/g,'/')}・${LEARNED_META.days}日・${LEARNED_META.distinct}通り）。現場NG指定・遠方＋超近場は対象外</span></div>
-      <div class="ri">R-HG 🏠 <span>最終便側の上限（2便目以降の片道）：本郷50分（17時帰着）・斉藤45分（12/15定年退職）・中村/西川75分。遠方の後便禁止は片道120分以上・静岡/山梨/長野/福島。3便目は最遠90分未満の日だけ・片道60分以内</span></div>
+      <div class="ri">R-HG 🏠 <span>最終便側の上限（2便目以降の片道）：本郷50分（17時帰着）・斉藤45分（12/15定年退職）・中村/西川75分。最後の便に遠方（片道90分以上・静岡/山梨/長野/福島）を入れない（午後指定の遠方は例外）。1日最大3便、3便目は最遠90分未満の日だけ・片道60分以内。現地待機は60分まで</span></div>
       <div class="ri">R-2C 📦 <span>1台便は物理的に載らない車（単発）だけ。それ以外は必ず2台ペア（方角の基準に合う相手を優先→いなければ「無理度」の低い相手。名指しNG・遠方＋超近場も最後の手段として可＝引き取り最優先）。例外＝野田市内は1台便も可。無理度は過去の実配車から自動算出</span></div>
       <div class="ri">R-HP 🔧 <span>ヘルプは自走が自分の案件を引き取った車で向かい、けん引してトラックまで運ぶ。トラック到着時刻・引取地点からの距離・自走自身の時間指定で人と順番を自動決定</span></div>
       <div class="ri">R-L 🚗 <span>車高低い → 3シリーズ不可(アオリ段差問題)</span></div>
