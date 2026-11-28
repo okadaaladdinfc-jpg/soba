@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>相場表アプリ v3.6（野田ヤード）</title>
+<title>相場表アプリ v3.7（野田ヤード）</title>
 <style>
   :root{
     --bg:#0f1115; --panel:#1a1d24; --panel2:#222631; --line:#2c313c;
@@ -19,6 +19,12 @@
   input,select,button,textarea{font-family:inherit;font-size:14px}
   .search{flex:1;min-width:200px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--txt)}
   .search::placeholder{color:var(--muted)}
+  .searchwrap{position:relative;flex:1;min-width:200px;display:flex}
+  .searchwrap .search{flex:1;min-width:0;padding-right:40px}
+  .search::-webkit-search-cancel-button{display:none}
+  #qClear{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:28px;height:28px;border:none;border-radius:50%;background:var(--panel2);color:var(--muted);font-size:14px;line-height:28px;padding:0;cursor:pointer;display:none}
+  #qClear:hover{color:var(--txt)}
+  #qClear.show{display:block}
   .btn{padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);cursor:pointer}
   .btn:hover{border-color:var(--accent)}
   .btn.primary{background:var(--accent);border-color:var(--accent)}
@@ -75,6 +81,8 @@
     .title small{font-size:10px;flex-basis:100%}
     .toolbar{gap:6px;margin-top:6px}
     .search{padding:8px 10px;font-size:14px;min-width:0}
+    .searchwrap{flex:1 1 160px;min-width:0}
+    .searchwrap .search{padding-right:38px}
     #micBtn{padding:8px 10px}
     .btn{padding:7px 9px;font-size:12px}
     .awtoggle button{padding:7px 9px;font-size:12px}
@@ -111,9 +119,9 @@
 </head>
 <body>
 <header>
-  <div class="title">📈 相場表アプリ <small>野田ヤード / v3.6（年式を年月まで表示）</small></div>
+  <div class="title">📈 相場表アプリ <small>野田ヤード / v3.7（検索窓に✖消去ボタン）</small></div>
   <div class="toolbar">
-    <input id="q" class="search" placeholder="車種・型式で検索（例: アルファード MNH15 / セレナ C26）">
+    <span class="searchwrap"><input id="q" class="search" placeholder="車種・型式で検索（例: アルファード MNH15 / セレナ C26）"><button type="button" id="qClear" title="入力を消す" aria-label="入力を消す">✖</button></span>
     <button class="btn" id="micBtn" title="音声で車種検索">🎤</button>
     <div class="awtoggle" id="awToggle">
       <button data-aw="1" class="on">アルミ有(AW)</button>
@@ -659,6 +667,7 @@ document.getElementById("warekiOverlay").onclick=(e)=>{ if(e.target.id==="wareki
 
 /* ===== 📋 変更履歴（新しい順） ===== */
 const CHANGELOG = [
+  {v:"3.7", d:"2026-11-28", t:"検索窓に「✖」消去ボタンを追加", note:"文字を入力すると検索窓の右端に✖が出て、押すと入力が消えて全件表示に戻ります。"},
   {v:"3.6", d:"2026-11-14", t:"年式を「年月」まで表示", note:"例：2005年12月〜2016年7月（H17.12〜H28.7）。発売〜販売終了の目安。月が不明な車種は年のみ、継続販売中は「現行」。あわせて一部車種の年式を訂正（キャリイDA52T/DD51T、アトレーS200V、ハイゼットS320V/S321V、WiLL Vi、デリカD:2 など）。"},
   {v:"3.5", d:"2026-09-22", t:"「変更履歴」ボタンをページ下部へ移動", note:"普段は使わないボタンなので、上部ツールバーから一番下へ。"},
   {v:"3.4", d:"2026-09-22", t:"価格履歴の日時表示を修正", note:"動作確認済み。サーバーから届く日時を短い形に自動整形。"},
@@ -749,6 +758,7 @@ function searchKey(value){
     .replace(/[\s\-_/・･.．,，()（）\[\]【】]+/g,"");
 }
 function render(){
+  document.getElementById("qClear").classList.toggle("show", document.getElementById("q").value!=="");
   const q = searchKey(document.getElementById("q").value);
   const tb = document.getElementById("rows");
   let list = DATA.filter(r=>{
@@ -903,6 +913,7 @@ document.getElementById("awToggle").querySelectorAll("button").forEach(b=>{
   };
 });
 document.getElementById("q").oninput=render;
+document.getElementById("qClear").onclick=()=>{ const q=document.getElementById("q"); q.value=""; render(); q.focus(); };
 // 画面回転・リサイズでモバイル/PC表示のしきい値をまたいだら再描画
 let _wasMobile=window.matchMedia("(max-width:767px)").matches;
 window.addEventListener("resize",()=>{
